@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "iF Fleet",
+    "slug": "if-fleet",
+    "version": "0.1.0",
+    "scheme": "if-fleet",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.iffleet.app"
+    },
+    "android": {
+      "package": "com.iffleet.app"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "iF Fleet needs location access to track your trip in real time."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
