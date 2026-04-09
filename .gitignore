@@ -8,6 +8,16 @@ build/
 .next/
 out/
 
+# Compiled TypeScript output in source directories (run tsc/build instead)
+packages/*/src/*.js
+packages/*/src/*.js.map
+packages/*/src/*.d.ts
+packages/*/src/*.d.ts.map
+apps/api/prisma/*.js
+apps/api/prisma/*.js.map
+apps/api/prisma/*.d.ts
+apps/api/prisma/*.d.ts.map
+
 # Environment secrets — NEVER commit these
 .env
 .env.local

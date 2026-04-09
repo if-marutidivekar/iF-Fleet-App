@@ -12,6 +12,6 @@
       "@if-fleet/domain": ["../../packages/domain/src/index.ts"]
     }
   },
-  "include": ["src/**/*", "prisma/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "prisma/seed.ts"]
 }
