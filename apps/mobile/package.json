@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@if-fleet/domain": "workspace:*",
-    "@react-native-async-storage/async-storage": "^1.23.0",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/bottom-tabs": "^6.6.0",
     "@react-navigation/native": "^6.1.0",
     "@react-navigation/native-stack": "^6.11.0",
@@ -28,7 +28,7 @@
     "expo-router": "~3.5.0",
     "expo-task-manager": "~11.8.0",
     "react": "18.2.0",
-    "react-native": "0.74.0",
+    "react-native": "0.74.5",
     "react-native-maps": "1.14.0",
     "socket.io-client": "^4.7.0",
     "zustand": "^4.5.0"
