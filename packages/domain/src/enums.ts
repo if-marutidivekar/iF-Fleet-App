@@ -53,6 +53,7 @@ export enum BookingStatus {
   IN_TRIP = 'IN_TRIP',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
+  EXCEPTION = 'EXCEPTION',
 }
 
 export enum TransportType {
