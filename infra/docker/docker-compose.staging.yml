@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ─── Networks ─────────────────────────────────────────────────────────────────
 # edge:     nginx ↔ web-app, nginx ↔ api (externally accessible via reverse proxy)
 # internal: api, worker, postgres, redis, grafana, loki (never exposed directly)
@@ -104,7 +102,7 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-fleet_db}
       - POSTGRES_USER=${POSTGRES_USER:-fleet_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fleet_staging_pass}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -139,7 +137,7 @@ services:
       - .env.staging
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-fleet_admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-fleet_minio_pass}
     volumes:
       - minio_data:/data
     networks:
