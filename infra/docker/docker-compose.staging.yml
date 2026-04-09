@@ -1,0 +1,183 @@
+version: "3.9"
+
+# ─── Networks ─────────────────────────────────────────────────────────────────
+# edge:     nginx ↔ web-app, nginx ↔ api (externally accessible via reverse proxy)
+# internal: api, worker, postgres, redis, grafana, loki (never exposed directly)
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  loki_data:
+  grafana_data:
+  minio_data:
+
+# ─── Services ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── Reverse Proxy ────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - edge
+    depends_on:
+      - web-app
+      - api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Web App (React static) ───────────────────────────────────────────────────
+  web-app:
+    image: ${REGISTRY:-local}/if-fleet-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=staging
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── API ──────────────────────────────────────────────────────────────────────
+  api:
+    image: ${REGISTRY:-local}/if-fleet-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      - NODE_ENV=staging
+    networks:
+      - edge
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Worker (background jobs) ──────────────────────────────────────────────────
+  worker:
+    image: ${REGISTRY:-local}/if-fleet-worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      - NODE_ENV=staging
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-fleet_db}
+      - POSTGRES_USER=${POSTGRES_USER:-fleet_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fleet_user} -d ${POSTGRES_DB:-fleet_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MinIO (S3-compatible object storage — optional Phase 1) ──────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env.staging
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-fleet_admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - storage  # opt-in: docker compose --profile storage up
+
+  # ── Loki (log aggregation) ────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./monitoring/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+    networks:
+      - internal
+
+  # ── Grafana (dashboards + log viewer) ────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      - GF_SERVER_ROOT_URL=http://staging-grafana.internal
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - internal
+      - edge  # exposed via nginx route /grafana
+    depends_on:
+      - loki

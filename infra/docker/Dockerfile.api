@@ -1,0 +1,56 @@
+# ─── Build stage ─────────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Copy workspace manifests first (Docker cache layer)
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/domain/package.json ./packages/domain/
+COPY packages/api-contracts/package.json ./packages/api-contracts/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile
+
+# Copy source
+COPY tsconfig.base.json ./
+COPY packages/domain ./packages/domain
+COPY packages/api-contracts ./packages/api-contracts
+COPY apps/api ./apps/api
+
+# Build shared packages then api
+RUN pnpm --filter @if-fleet/domain build
+RUN pnpm --filter @if-fleet/api build
+
+# Generate Prisma client
+RUN pnpm --filter @if-fleet/api exec prisma generate
+
+# ─── Runtime stage ────────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Production deps only
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/domain/package.json ./packages/domain/
+COPY packages/api-contracts/package.json ./packages/api-contracts/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built artifacts
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/node_modules/.prisma ./apps/api/node_modules/.prisma
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/packages/domain/dist ./packages/domain/dist
+
+WORKDIR /app/apps/api
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=5 \
+  CMD curl -f http://localhost:3001/api/v1/health || exit 1
+
+CMD ["node", "dist/main"]

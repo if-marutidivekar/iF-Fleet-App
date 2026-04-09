@@ -1,0 +1,386 @@
+// iF Fleet Management Platform — Prisma Schema
+// Run: pnpm db:generate && pnpm db:migrate:dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  EMPLOYEE
+  DRIVER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ASSIGNED
+  IN_TRIP
+  MAINTENANCE
+  INACTIVE
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  VAN
+  TRUCK
+  BUS
+}
+
+enum VehicleOwnership {
+  OWNED
+  LEASED
+  HIRED
+}
+
+enum BookingStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ASSIGNED
+  IN_TRIP
+  COMPLETED
+  CANCELLED
+  EXCEPTION
+}
+
+enum TransportType {
+  PERSON
+  PERSON_WITH_MATERIAL
+  MATERIAL_ONLY
+}
+
+enum AssignmentDecision {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum TripStatus {
+  CREATED
+  STARTED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+  EXCEPTION
+}
+
+enum LocationSource {
+  LIVE
+  DELAYED_SYNC
+  SIMULATED
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+}
+
+enum NotificationDeliveryState {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AuditAction {
+  BOOKING_CREATED
+  BOOKING_APPROVED
+  BOOKING_REJECTED
+  BOOKING_CANCELLED
+  ASSIGNMENT_CREATED
+  ASSIGNMENT_ACCEPTED
+  ASSIGNMENT_DECLINED
+  ASSIGNMENT_REASSIGNED
+  TRIP_STARTED
+  TRIP_COMPLETED
+  TRIP_EXCEPTION
+  VEHICLE_CREATED
+  VEHICLE_UPDATED
+  VEHICLE_DEACTIVATED
+  DRIVER_CREATED
+  DRIVER_UPDATED
+  DRIVER_DEACTIVATED
+  USER_LOGIN
+  USER_SUSPENDED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id         String     @id @default(uuid())
+  employeeId String     @unique
+  name       String
+  email      String     @unique
+  phone      String?
+  role       UserRole   @default(EMPLOYEE)
+  status     UserStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  deletedAt  DateTime?  // soft-delete
+
+  driverProfile  DriverProfile?
+  bookings       Booking[]       @relation("RequesterBookings")
+  approvedBookings Booking[]     @relation("ApproverBookings")
+  assignments    Assignment[]    @relation("AdminAssignments")
+  notifications  Notification[]
+  auditLogs      AuditLog[]      @relation("ActorAuditLogs")
+  fuelLogs       FuelLog[]
+
+  @@map("users")
+}
+
+model DriverProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  licenseNumber String
+  licenseExpiry DateTime
+  shiftReady    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime? // soft-delete preserves referential history
+
+  assignments Assignment[]
+
+  @@map("driver_profiles")
+}
+
+model Vehicle {
+  id               String           @id @default(uuid())
+  vehicleNo        String           @unique
+  type             VehicleType
+  make             String?
+  model            String?
+  year             Int?
+  capacity         Int
+  ownership        VehicleOwnership
+  status           VehicleStatus    @default(AVAILABLE)
+  maintenanceDueAt DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?        // soft-delete
+
+  assignments Assignment[]
+  fuelLogs    FuelLog[]
+
+  @@map("vehicles")
+}
+
+/// Admin-managed list of known origin/destination locations shown in booking flow step 2
+model PresetLocation {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pickupBookings  Booking[] @relation("PickupPreset")
+  dropoffBookings Booking[] @relation("DropoffPreset")
+
+  @@map("preset_locations")
+}
+
+model Booking {
+  id                  String        @id @default(uuid())
+  requesterId         String
+  requester           User          @relation("RequesterBookings", fields: [requesterId], references: [id])
+  transportType       TransportType
+  passengerCount      Int?
+  materialDescription String?
+
+  // Pickup
+  pickupPresetId      String?
+  pickupPreset        PresetLocation? @relation("PickupPreset", fields: [pickupPresetId], references: [id])
+  pickupCustomAddress String?         // free-text for "Other"
+  pickupLabel         String?
+  pickupLat           Float?
+  pickupLng           Float?
+
+  // Dropoff
+  dropoffPresetId      String?
+  dropoffPreset        PresetLocation? @relation("DropoffPreset", fields: [dropoffPresetId], references: [id])
+  dropoffCustomAddress String?         // free-text for "Other"
+  dropoffLabel         String?
+  dropoffLat           Float?
+  dropoffLng           Float?
+
+  requestedAt     DateTime
+  status          BookingStatus @default(PENDING_APPROVAL)
+  approvedById    String?
+  approvedBy      User?         @relation("ApproverBookings", fields: [approvedById], references: [id])
+  approvalNote    String?
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  assignment Assignment?
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("bookings")
+}
+
+model Assignment {
+  id           String             @id @default(uuid())
+  bookingId    String             @unique
+  booking      Booking            @relation(fields: [bookingId], references: [id])
+  vehicleId    String
+  vehicle      Vehicle            @relation(fields: [vehicleId], references: [id])
+  driverId     String
+  driver       DriverProfile      @relation(fields: [driverId], references: [id])
+  assignedById String
+  assignedBy   User               @relation("AdminAssignments", fields: [assignedById], references: [id])
+  assignedAt   DateTime           @default(now())
+  decision     AssignmentDecision @default(PENDING)
+  decisionAt   DateTime?
+  declineReason String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  trip Trip?
+
+  @@index([vehicleId])
+  @@index([driverId])
+  @@map("assignments")
+}
+
+model Trip {
+  id           String     @id @default(uuid())
+  bookingId    String     @unique
+  assignmentId String     @unique
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  status       TripStatus @default(CREATED)
+  odometerStart Float?
+  odometerEnd   Float?
+  actualStartAt DateTime?
+  actualEndAt   DateTime?
+  remarks       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  locationLogs LocationLog[]
+  fuelLogs     FuelLog[]
+
+  @@index([status])
+  @@map("trips")
+}
+
+model LocationLog {
+  id         String         @id @default(uuid())
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id])
+  latitude   Float
+  longitude  Float
+  accuracy   Float?
+  source     LocationSource @default(LIVE)
+  capturedAt DateTime       // device GPS timestamp
+  syncedAt   DateTime       @default(now())
+
+  @@index([tripId, capturedAt])
+  @@map("location_logs")
+}
+
+model FuelLog {
+  id               String   @id @default(uuid())
+  tripId           String
+  trip             Trip     @relation(fields: [tripId], references: [id])
+  vehicleId        String
+  vehicle          Vehicle  @relation(fields: [vehicleId], references: [id])
+  fuelVolume       Float
+  fuelCost         Float?
+  odometerAtRefuel Float
+  receiptRef       String?
+  recordedById     String
+  recordedBy       User     @relation(fields: [recordedById], references: [id])
+  recordedAt       DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([tripId])
+  @@index([vehicleId])
+  @@map("fuel_logs")
+}
+
+model Notification {
+  id            String                    @id @default(uuid())
+  recipientId   String
+  recipient     User                      @relation(fields: [recipientId], references: [id])
+  channel       NotificationChannel
+  title         String
+  body          String
+  payload       Json?
+  deliveryState NotificationDeliveryState @default(PENDING)
+  readAt        DateTime?
+  createdAt     DateTime                  @default(now())
+
+  @@index([recipientId, deliveryState])
+  @@map("notifications")
+}
+
+/// Append-only audit trail — never updated, never soft-deleted
+model AuditLog {
+  id         String      @id @default(uuid())
+  actorId    String
+  actor      User        @relation("ActorAuditLogs", fields: [actorId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Short-lived OTP records — auto-expired by cleanup worker
+model OtpRecord {
+  id        String   @id @default(uuid())
+  email     String
+  otp       String   // hashed
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([email, used])
+  @@map("otp_records")
+}
+
+/// Device/session registry for push notification targeting and revocation
+model DeviceSession {
+  id           String   @id @default(uuid())
+  userId       String
+  refreshToken String   @unique // hashed
+  pushToken    String?
+  deviceType   String?  // ios | android | web
+  lastActiveAt DateTime @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@map("device_sessions")
+}

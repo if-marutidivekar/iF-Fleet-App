@@ -1,0 +1,747 @@
+openapi: "3.1.0"
+info:
+  title: iF Fleet Management API
+  version: "0.1.0"
+  description: |
+    Single backend API for the iF Fleet Management Platform.
+    Supports Employee, Driver, and Admin roles on web and mobile.
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Local development
+  - url: https://staging-fleet-api.internal/api/v1
+    description: In-house Docker staging
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Fleet
+  - name: Locations (Presets)
+  - name: Bookings
+  - name: Assignments
+  - name: Trips
+  - name: Tracking
+  - name: Fuel
+  - name: Notifications
+  - name: Admin
+  - name: Reports
+
+# ─── Security ──────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ── Common ──────────────────────────────────────────────────────────────────
+    Error:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+        errors: { type: array, items: { type: string } }
+
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer, minimum: 1, default: 1 }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        total: { type: integer }
+
+    # ── Auth ────────────────────────────────────────────────────────────────────
+    RequestOtpBody:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be company-domain email
+
+    VerifyOtpBody:
+      type: object
+      required: [email, employeeId, otp]
+      properties:
+        email: { type: string, format: email }
+        employeeId: { type: string }
+        otp: { type: string, minLength: 6, maxLength: 6 }
+
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [EMPLOYEE, DRIVER, ADMIN] }
+
+    # ── Preset Location ─────────────────────────────────────────────────────────
+    PresetLocation:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        isActive: { type: boolean }
+
+    # ── Booking ─────────────────────────────────────────────────────────────────
+    BookingLocation:
+      type: object
+      description: |
+        Either presetLocationId (for pre-fed locations) OR customAddress (for "Other") must be provided.
+      properties:
+        presetLocationId: { type: string, nullable: true }
+        customAddress: { type: string, nullable: true, description: "Free-text when user selects Other" }
+        label: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+
+    CreateBookingBody:
+      type: object
+      required: [transportType, pickup, dropoff, requestedAt]
+      properties:
+        transportType:
+          type: string
+          enum: [PERSON, PERSON_WITH_MATERIAL, MATERIAL_ONLY]
+        passengerCount: { type: integer, minimum: 1 }
+        materialDescription: { type: string }
+        pickup: { $ref: '#/components/schemas/BookingLocation' }
+        dropoff: { $ref: '#/components/schemas/BookingLocation' }
+        requestedAt:
+          type: string
+          format: date-time
+          description: Desired departure time
+
+    Booking:
+      type: object
+      properties:
+        id: { type: string }
+        requesterId: { type: string }
+        transportType: { type: string, enum: [PERSON, PERSON_WITH_MATERIAL, MATERIAL_ONLY] }
+        passengerCount: { type: integer, nullable: true }
+        materialDescription: { type: string, nullable: true }
+        pickup: { $ref: '#/components/schemas/BookingLocation' }
+        dropoff: { $ref: '#/components/schemas/BookingLocation' }
+        requestedAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, ASSIGNED, IN_TRIP, COMPLETED, CANCELLED, EXCEPTION]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    # ── Assignment ──────────────────────────────────────────────────────────────
+    Assignment:
+      type: object
+      properties:
+        id: { type: string }
+        bookingId: { type: string }
+        vehicleId: { type: string }
+        driverId: { type: string }
+        assignedById: { type: string }
+        assignedAt: { type: string, format: date-time }
+        decision: { type: string, enum: [PENDING, ACCEPTED, DECLINED] }
+        decisionAt: { type: string, format: date-time, nullable: true }
+        declineReason: { type: string, nullable: true }
+
+    # ── Trip ────────────────────────────────────────────────────────────────────
+    Trip:
+      type: object
+      properties:
+        id: { type: string }
+        bookingId: { type: string }
+        assignmentId: { type: string }
+        status:
+          type: string
+          enum: [CREATED, STARTED, IN_PROGRESS, PAUSED, COMPLETED, CANCELLED, EXCEPTION]
+        odometerStart: { type: number, nullable: true }
+        odometerEnd: { type: number, nullable: true }
+        actualStartAt: { type: string, format: date-time, nullable: true }
+        actualEndAt: { type: string, format: date-time, nullable: true }
+        remarks: { type: string, nullable: true }
+
+    StartTripBody:
+      type: object
+      required: [odometerStart]
+      properties:
+        odometerStart: { type: number, minimum: 0 }
+
+    EndTripBody:
+      type: object
+      required: [odometerEnd]
+      properties:
+        odometerEnd: { type: number, minimum: 0 }
+        remarks: { type: string }
+
+    # ── Location Ping ───────────────────────────────────────────────────────────
+    LocationPingBody:
+      type: object
+      required: [latitude, longitude, capturedAt]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracy: { type: number, minimum: 0 }
+        capturedAt:
+          type: string
+          format: date-time
+          description: Device timestamp when GPS was sampled
+
+    BatchLocationPingBody:
+      type: object
+      required: [pings]
+      description: Batch replay after device reconnects
+      properties:
+        pings:
+          type: array
+          items: { $ref: '#/components/schemas/LocationPingBody' }
+
+    # ── Fuel Log ────────────────────────────────────────────────────────────────
+    CreateFuelLogBody:
+      type: object
+      required: [fuelVolume, odometerAtRefuel]
+      properties:
+        fuelVolume: { type: number, minimum: 0.1 }
+        fuelCost: { type: number, minimum: 0 }
+        odometerAtRefuel: { type: number, minimum: 0 }
+        receiptRef: { type: string }
+
+    # ── Vehicle ─────────────────────────────────────────────────────────────────
+    Vehicle:
+      type: object
+      properties:
+        id: { type: string }
+        vehicleNo: { type: string }
+        type: { type: string, enum: [SEDAN, SUV, VAN, TRUCK, BUS] }
+        make: { type: string }
+        model: { type: string }
+        year: { type: integer }
+        capacity: { type: integer }
+        ownership: { type: string, enum: [OWNED, LEASED, HIRED] }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, IN_TRIP, MAINTENANCE, INACTIVE] }
+        maintenanceDueAt: { type: string, format: date-time, nullable: true }
+
+# ─── Paths ─────────────────────────────────────────────────────────────────────
+paths:
+
+  # Auth
+  /auth/request-otp:
+    post:
+      tags: [Auth]
+      summary: Request OTP for login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestOtpBody' }
+      responses:
+        '200':
+          description: OTP sent to provided email
+        '400':
+          description: Invalid email or non-company domain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and employee ID; returns JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyOtpBody' }
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401':
+          description: Invalid OTP, expired OTP, or unmatched employee ID
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: New access token issued
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke current session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Session revoked
+
+  # Preset Locations
+  /locations/presets:
+    get:
+      tags: [Locations (Presets)]
+      summary: List all active pre-fed locations for booking pickup/dropoff
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of preset locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PresetLocation' }
+
+    post:
+      tags: [Locations (Presets)]
+      summary: Add a new preset location (Admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, address]
+              properties:
+                name: { type: string }
+                address: { type: string }
+                latitude: { type: number }
+                longitude: { type: number }
+      responses:
+        '201':
+          description: Preset location created
+
+  /locations/presets/{id}:
+    patch:
+      tags: [Locations (Presets)]
+      summary: Update or deactivate a preset location (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                address: { type: string }
+                isActive: { type: boolean }
+      responses:
+        '200':
+          description: Updated
+
+  # Bookings
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings (own for Employee/Driver; all for Admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated booking list
+
+    post:
+      tags: [Bookings]
+      summary: Create a new booking request (3-step guided flow)
+      description: |
+        Step 2 of the booking flow uses pickup/dropoff locations that are either:
+        - A `presetLocationId` from the pre-fed list (admin-managed)
+        - A `customAddress` string when the user selects "Other"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingBody' }
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get booking by ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Booking detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+
+    patch:
+      tags: [Bookings]
+      summary: Update booking (cancel, edit draft)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Updated
+
+  /bookings/{id}/approve:
+    patch:
+      tags: [Bookings]
+      summary: Approve a pending booking (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200':
+          description: Booking approved
+
+  /bookings/{id}/reject:
+    patch:
+      tags: [Bookings]
+      summary: Reject a pending booking (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Booking rejected
+
+  # Assignments
+  /assignments:
+    post:
+      tags: [Assignments]
+      summary: Create assignment — assign vehicle + driver to approved booking (Admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookingId, vehicleId, driverId]
+              properties:
+                bookingId: { type: string }
+                vehicleId: { type: string }
+                driverId: { type: string }
+      responses:
+        '201':
+          description: Assignment created, driver notified
+
+  /assignments/{id}/accept:
+    post:
+      tags: [Assignments]
+      summary: Driver accepts an assigned trip
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Trip accepted
+
+  /assignments/{id}/decline:
+    post:
+      tags: [Assignments]
+      summary: Driver declines an assigned trip
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Trip declined; admin must reassign
+
+  # Trips
+  /trips/{id}/start:
+    post:
+      tags: [Trips]
+      summary: Driver starts a trip (captures odometer start)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartTripBody' }
+      responses:
+        '200':
+          description: Trip started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+
+  /trips/{id}/end:
+    post:
+      tags: [Trips]
+      summary: Driver ends a trip (captures odometer end; idempotent for offline sync)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EndTripBody' }
+      responses:
+        '200':
+          description: Trip completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+
+  /trips/{id}/location:
+    post:
+      tags: [Tracking]
+      summary: Single GPS ping during active trip
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationPingBody' }
+      responses:
+        '204':
+          description: Location recorded
+
+  /trips/{id}/location/batch:
+    post:
+      tags: [Tracking]
+      summary: Batch upload of queued GPS pings (offline reconnect replay)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchLocationPingBody' }
+      responses:
+        '204':
+          description: Batch accepted; server de-duplicates by capturedAt
+
+  /trips/{id}/fuel:
+    post:
+      tags: [Fuel]
+      summary: Log a fuel fill during a trip
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFuelLogBody' }
+      responses:
+        '201':
+          description: Fuel log created
+
+  # Fleet (Admin)
+  /admin/fleet/vehicles:
+    get:
+      tags: [Fleet]
+      summary: List all vehicles (Admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Vehicle list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Vehicle' }
+
+    post:
+      tags: [Fleet]
+      summary: Add a vehicle (Admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Vehicle' }
+      responses:
+        '201':
+          description: Vehicle created
+
+  /admin/fleet/vehicles/{id}:
+    patch:
+      tags: [Fleet]
+      summary: Update vehicle (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Updated
+
+    delete:
+      tags: [Fleet]
+      summary: Soft-delete (deactivate) a vehicle (Admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Vehicle deactivated
+
+  /admin/fleet/live:
+    get:
+      tags: [Tracking]
+      summary: |
+        WebSocket endpoint — live fleet map for admin.
+        Upgrade to ws:// or wss://; subscribe to real-time vehicle position events.
+      responses:
+        '101':
+          description: WebSocket upgrade
+
+  # Notifications
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications for the authenticated user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Notification list
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark a notification as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Marked read
+
+  # Reports
+  /reports/trips:
+    get:
+      tags: [Reports]
+      summary: Trip report with km and fuel summary (Admin full; Employee/Driver own)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+        - name: driverId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Trip report
+
+  # Health
+  /health:
+    get:
+      tags: [Admin]
+      summary: Service health check (used by Docker readiness probe)
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  db: { type: string, example: ok }
+                  redis: { type: string, example: ok }
