@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -96,22 +97,31 @@ export class AuthService {
   }
 
   async refresh(rawRefreshToken: string): Promise<{ accessToken: string }> {
-    const hashed = await bcrypt.hash(rawRefreshToken, 1); // fast hash for lookup
+    // SHA-256 is deterministic — safe for lookup unlike bcrypt
+    const tokenHash = this.hashRefreshToken(rawRefreshToken);
     const session = await this.prisma.deviceSession.findFirst({
-      where: { refreshToken: hashed, revokedAt: null },
-      include: { user: true } as never,
+      where: { refreshToken: tokenHash, revokedAt: null },
     });
 
     if (!session) throw new UnauthorizedException('Invalid or revoked refresh token');
 
-    const user = (session as { user: { id: string; email: string; role: string } }).user;
+    const user = await this.prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, email: true, role: true, status: true },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User account is inactive');
+    }
+
     const accessToken = this.issueAccessToken(user.id, user.email, user.role);
     return { accessToken };
   }
 
   async logout(rawRefreshToken: string): Promise<void> {
+    const tokenHash = this.hashRefreshToken(rawRefreshToken);
     await this.prisma.deviceSession.updateMany({
-      where: { refreshToken: rawRefreshToken },
+      where: { refreshToken: tokenHash },
       data: { revokedAt: new Date() },
     });
   }
@@ -122,13 +132,18 @@ export class AuthService {
 
   private async issueRefreshToken(userId: string): Promise<string> {
     const token = uuidv4();
-    const hashed = await bcrypt.hash(token, 10);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const tokenHash = this.hashRefreshToken(token);
 
     await this.prisma.deviceSession.create({
-      data: { userId, refreshToken: hashed, lastActiveAt: new Date() },
+      data: { userId, refreshToken: tokenHash, lastActiveAt: new Date() },
     });
 
-    return token;
+    return token; // raw token returned to client; only hash stored in DB
+  }
+
+  /** SHA-256 is deterministic, so the same token always produces the same hash —
+   *  making DB lookup possible without storing the raw token. */
+  private hashRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }
