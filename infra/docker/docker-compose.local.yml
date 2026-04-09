@@ -1,0 +1,25 @@
+# ─── Local development overrides ──────────────────────────────────────────────
+# Extends docker-compose.staging.yml to expose DB and cache ports to the host
+# so Prisma, API, and other local tools can connect directly.
+#
+# Usage:
+#   docker compose -f infra/docker/docker-compose.staging.yml \
+#                  -f infra/docker/docker-compose.local.yml \
+#                  up -d postgres redis
+#
+# NEVER use this file on a real staging/production server.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"   # localhost only — not exposed to LAN
+    networks:
+      - internal
+      - edge                     # override internal-only so host can reach it
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"   # localhost only
+    networks:
+      - internal
+      - edge
