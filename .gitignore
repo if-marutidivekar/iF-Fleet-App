@@ -46,12 +46,14 @@ Thumbs.db
 # Prisma
 prisma/migrations/.migration-lock
 
-# React Native
+# React Native / Expo
 apps/mobile/.expo/
 apps/mobile/android/
 apps/mobile/ios/
 apps/mobile/*.jks
 apps/mobile/*.keystore
+# Root-level app.json auto-created by expo-cli (EAS config lives in apps/mobile/app.json)
+/app.json
 
 # Docker
 infra/docker/.env.staging

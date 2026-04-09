@@ -1,12 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@if-fleet/domain': resolve(__dirname, '../../packages/domain/src/index.ts'),
+      // ESM-safe resolution: avoids __dirname which is unavailable in native ESM
+      '@if-fleet/domain': fileURLToPath(
+        new URL('../../packages/domain/src/index.ts', import.meta.url),
+      ),
     },
   },
   server: {
