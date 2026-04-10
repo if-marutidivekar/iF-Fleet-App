@@ -27,32 +27,53 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_APPROVAL: '#d97706',
   APPROVED: '#2563eb',
   ASSIGNED: '#7c3aed',
+  'ASSIGNED–PENDING': '#7c3aed',
+  'ASSIGNED–ACCEPTED': '#059669',
+  'ASSIGNED–DECLINED': '#dc2626',
   IN_TRIP: '#f97316',
   COMPLETED: '#059669',
   REJECTED: '#dc2626',
-  CANCELLED: '#dc2626',
+  CANCELLED: '#6b7280',
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? '#64748b';
+function getEffectiveStatus(booking: Booking): string {
+  if (booking.status === 'ASSIGNED' && booking.assignment) {
+    const d = booking.assignment.decision;
+    if (d === 'PENDING') return 'ASSIGNED–PENDING';
+    if (d === 'ACCEPTED') return 'ASSIGNED–ACCEPTED';
+    if (d === 'DECLINED') return 'ASSIGNED–DECLINED';
+  }
+  return booking.status;
+}
+
+function StatusBadge({ booking }: { booking: Booking }) {
+  const eff = getEffectiveStatus(booking);
+  const color = STATUS_COLORS[eff] ?? '#64748b';
   return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 10px',
-        borderRadius: 12,
-        background: color + '1a',
-        color,
-        fontWeight: 600,
-        fontSize: 12,
-        border: `1px solid ${color}44`,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {status.replace(/_/g, ' ')}
-    </span>
+    <div>
+      <span
+        style={{
+          display: 'inline-block',
+          padding: '2px 10px',
+          borderRadius: 12,
+          background: color + '1a',
+          color,
+          fontWeight: 600,
+          fontSize: 12,
+          border: `1px solid ${color}44`,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {eff.replace(/_/g, ' ')}
+      </span>
+      {booking.status === 'REJECTED' && booking.rejectionReason && (
+        <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{booking.rejectionReason}</div>
+      )}
+    </div>
   );
 }
+
+const CANCELLABLE = new Set(['PENDING_APPROVAL', 'APPROVED', 'ASSIGNED']);
 
 export function BookingHistoryPage() {
   const queryClient = useQueryClient();
@@ -132,6 +153,7 @@ export function BookingHistoryPage() {
                 const pickup = b.pickupLabel || b.pickupCustomAddress || '—';
                 const dropoff = b.dropoffLabel || b.dropoffCustomAddress || '—';
                 const isCancelling = cancellingId === b.id;
+                const canCancel = CANCELLABLE.has(b.status);
                 return (
                   <tr
                     key={b.id}
@@ -158,10 +180,7 @@ export function BookingHistoryPage() {
                       {new Date(b.requestedAt).toLocaleString()}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <StatusBadge status={b.status} />
-                      {b.status === 'REJECTED' && b.rejectionReason && (
-                        <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{b.rejectionReason}</div>
-                      )}
+                      <StatusBadge booking={b} />
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>
                       {b.assignment ? (
@@ -182,49 +201,50 @@ export function BookingHistoryPage() {
                       )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      {b.status === 'PENDING_APPROVAL' && (
-                        <button
-                          onClick={() => {
-                            if (isCancelling) {
-                              cancelMutation.mutate(b.id);
-                            } else {
-                              setCancellingId(b.id);
-                            }
-                          }}
-                          disabled={cancelMutation.isPending}
-                          style={{
-                            background: isCancelling ? '#dc2626' : '#fff',
-                            color: isCancelling ? '#fff' : '#dc2626',
-                            border: '1px solid #dc2626',
-                            borderRadius: 6,
-                            padding: '5px 14px',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {isCancelling
-                            ? cancelMutation.isPending
-                              ? 'Cancelling...'
-                              : 'Confirm Cancel'
-                            : 'Cancel'}
-                        </button>
-                      )}
-                      {cancellingId === b.id && !cancelMutation.isPending && (
-                        <button
-                          onClick={() => setCancellingId(null)}
-                          style={{
-                            marginLeft: 6,
-                            background: 'none',
-                            border: 'none',
-                            color: '#64748b',
-                            fontSize: 12,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Keep
-                        </button>
+                      {canCancel && (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => {
+                              if (isCancelling) {
+                                cancelMutation.mutate(b.id);
+                              } else {
+                                setCancellingId(b.id);
+                              }
+                            }}
+                            disabled={cancelMutation.isPending && isCancelling}
+                            style={{
+                              background: isCancelling ? '#dc2626' : '#fff',
+                              color: isCancelling ? '#fff' : '#dc2626',
+                              border: '1px solid #dc2626',
+                              borderRadius: 6,
+                              padding: '5px 14px',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {isCancelling
+                              ? cancelMutation.isPending
+                                ? 'Cancelling...'
+                                : 'Confirm Cancel'
+                              : 'Cancel'}
+                          </button>
+                          {isCancelling && !cancelMutation.isPending && (
+                            <button
+                              onClick={() => setCancellingId(null)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#64748b',
+                                fontSize: 12,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Keep
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>

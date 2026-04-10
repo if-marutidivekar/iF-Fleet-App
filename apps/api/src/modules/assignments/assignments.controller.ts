@@ -7,7 +7,7 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AssignmentsService } from './assignments.service';
@@ -32,6 +32,22 @@ class ReassignAssignmentDto {
   @IsString()
   @IsNotEmpty()
   driverId!: string;
+}
+
+class DriverCancelDto {
+  @IsOptional()
+  @IsString()
+  cancelReason?: string;
+}
+
+class SelfAssignDto {
+  @IsString()
+  @IsNotEmpty()
+  bookingId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  vehicleId!: string;
 }
 
 @ApiTags('Assignments')
@@ -87,5 +103,30 @@ export class AssignmentsController {
     @CurrentUser() user: JwtUser,
   ) {
     return this.assignmentsService.reassign(id, dto.vehicleId, dto.driverId, user.sub);
+  }
+
+  @Post(':id/driver-cancel')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'Driver cancels an accepted assignment (reverts booking to APPROVED)' })
+  driverCancel(
+    @Param('id') id: string,
+    @Body() dto: DriverCancelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.assignmentsService.driverCancel(id, user.sub, dto.cancelReason);
+  }
+
+  @Get('available')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'List unassigned APPROVED bookings available for self-assignment (AUTO mode)' })
+  findAvailable() {
+    return this.assignmentsService.findAvailableForDrivers();
+  }
+
+  @Post('self-assign')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'Driver self-assigns a booking (AUTO approval mode)' })
+  selfAssign(@Body() dto: SelfAssignDto, @CurrentUser() user: JwtUser) {
+    return this.assignmentsService.selfAssign(dto.bookingId, dto.vehicleId, user.sub);
   }
 }

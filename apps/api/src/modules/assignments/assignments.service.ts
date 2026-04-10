@@ -178,6 +178,103 @@ export class AssignmentsService {
     });
   }
 
+  async driverCancel(id: string, userId: string, cancelReason?: string) {
+    const assignment = await this.prisma.assignment.findUnique({
+      where: { id },
+      include: { booking: true },
+    });
+    if (!assignment) throw new NotFoundException('Assignment not found');
+
+    const driverProfile = await this.prisma.driverProfile.findFirst({ where: { userId } });
+    if (!driverProfile || assignment.driverId !== driverProfile.id) {
+      throw new ForbiddenException('Only the assigned driver can cancel');
+    }
+
+    if (assignment.decision !== 'ACCEPTED') {
+      throw new BadRequestException('Can only cancel an accepted assignment');
+    }
+
+    if (!['ASSIGNED'].includes(assignment.booking.status)) {
+      throw new BadRequestException('Booking is not in a cancellable state');
+    }
+
+    // Revert booking to APPROVED for reassignment, free vehicle
+    await Promise.all([
+      this.prisma.booking.update({
+        where: { id: assignment.bookingId },
+        data: { status: 'APPROVED' },
+      }),
+      this.prisma.vehicle.update({
+        where: { id: assignment.vehicleId },
+        data: { status: 'AVAILABLE' },
+      }),
+    ]);
+
+    return this.prisma.assignment.update({
+      where: { id },
+      data: {
+        decision: 'DECLINED',
+        decisionAt: new Date(),
+        declineReason: cancelReason ?? 'Driver cancelled',
+      },
+      include: this.assignmentInclude,
+    });
+  }
+
+  async findAvailableForDrivers() {
+    return this.prisma.booking.findMany({
+      where: {
+        status: 'APPROVED',
+        assignment: null,
+      },
+      include: {
+        requester: { select: { id: true, name: true, email: true } },
+        pickupPreset: { select: { id: true, name: true, address: true } },
+        dropoffPreset: { select: { id: true, name: true, address: true } },
+      },
+      orderBy: { requestedAt: 'asc' },
+    });
+  }
+
+  async selfAssign(bookingId: string, vehicleId: string, userId: string) {
+    const driverProfile = await this.prisma.driverProfile.findFirst({ where: { userId } });
+    if (!driverProfile) throw new ForbiddenException('No driver profile found');
+    if (!driverProfile.shiftReady) throw new BadRequestException('Driver is not shift-ready');
+
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { assignment: true },
+    });
+    if (!booking || booking.status !== 'APPROVED') {
+      throw new BadRequestException('Booking is not available for self-assignment');
+    }
+    if (booking.assignment) throw new ConflictException('Booking already has an assignment');
+
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
+    if (!vehicle || vehicle.status !== 'AVAILABLE') {
+      throw new BadRequestException('Vehicle is not available');
+    }
+
+    const assignment = await this.prisma.assignment.create({
+      data: {
+        bookingId,
+        vehicleId,
+        driverId: driverProfile.id,
+        assignedById: userId,
+        decision: 'ACCEPTED',
+        decisionAt: new Date(),
+      },
+      include: this.assignmentInclude,
+    });
+
+    await Promise.all([
+      this.prisma.vehicle.update({ where: { id: vehicleId }, data: { status: 'ASSIGNED' } }),
+      this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ASSIGNED' } }),
+    ]);
+
+    return assignment;
+  }
+
   async reassign(id: string, vehicleId: string, driverId: string, adminId: string) {
     const assignment = await this.prisma.assignment.findUnique({
       where: { id },
