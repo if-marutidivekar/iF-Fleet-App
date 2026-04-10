@@ -384,3 +384,12 @@ model DeviceSession {
   @@index([userId])
   @@map("device_sessions")
 }
+
+/// Key-value store for admin-configurable system settings (SMTP, domain, etc.)
+model AppConfig {
+  key       String   @id
+  value     String   // JSON-encoded value
+  updatedAt DateTime @updatedAt
+
+  @@map("app_configs")
+}

@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -21,6 +22,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly mailService: MailService,
   ) {}
 
   async requestOtp(email: string): Promise<{ message: string }> {
@@ -42,8 +44,7 @@ export class AuthService {
       data: { email, otp: hashed, expiresAt },
     });
 
-    // TODO: send via email provider (nodemailer / sendgrid)
-    console.log(`[DEV] OTP for ${email}: ${otp}`);
+    await this.mailService.sendOtp(email, otp);
 
     return { message: 'OTP sent to your email address' };
   }
