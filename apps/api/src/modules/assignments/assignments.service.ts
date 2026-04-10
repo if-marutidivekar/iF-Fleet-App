@@ -159,17 +159,12 @@ export class AssignmentsService {
       throw new BadRequestException('Assignment decision already made');
     }
 
-    // Revert booking to APPROVED and vehicle to AVAILABLE
-    await Promise.all([
-      this.prisma.booking.update({
-        where: { id: assignment.bookingId },
-        data: { status: 'APPROVED' },
-      }),
-      this.prisma.vehicle.update({
-        where: { id: assignment.vehicleId },
-        data: { status: 'AVAILABLE' },
-      }),
-    ]);
+    // Free the vehicle — booking stays ASSIGNED so admin can Reassign.
+    // UI derives "ASSIGNED–DECLINED" from booking.status + assignment.decision.
+    await this.prisma.vehicle.update({
+      where: { id: assignment.vehicleId },
+      data: { status: 'AVAILABLE' },
+    });
 
     return this.prisma.assignment.update({
       where: { id },
@@ -198,17 +193,12 @@ export class AssignmentsService {
       throw new BadRequestException('Booking is not in a cancellable state');
     }
 
-    // Revert booking to APPROVED for reassignment, free vehicle
-    await Promise.all([
-      this.prisma.booking.update({
-        where: { id: assignment.bookingId },
-        data: { status: 'APPROVED' },
-      }),
-      this.prisma.vehicle.update({
-        where: { id: assignment.vehicleId },
-        data: { status: 'AVAILABLE' },
-      }),
-    ]);
+    // Free the vehicle — booking stays ASSIGNED so admin can Reassign.
+    // UI derives "ASSIGNED–DECLINED" from booking.status + assignment.decision.
+    await this.prisma.vehicle.update({
+      where: { id: assignment.vehicleId },
+      data: { status: 'AVAILABLE' },
+    });
 
     return this.prisma.assignment.update({
       where: { id },
@@ -287,23 +277,23 @@ export class AssignmentsService {
       throw new BadRequestException('Can only reassign ASSIGNED bookings');
     }
 
-    // Validate new vehicle is AVAILABLE (or same vehicle)
+    // Validate new vehicle is AVAILABLE (or same vehicle that was freed on decline)
+    const newVehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
+    if (!newVehicle || newVehicle.status !== 'AVAILABLE') {
+      throw new BadRequestException('New vehicle is not available');
+    }
+    // Free the old vehicle if it differs (may already be AVAILABLE if driver declined)
     if (vehicleId !== assignment.vehicleId) {
-      const newVehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
-      if (!newVehicle || newVehicle.status !== 'AVAILABLE') {
-        throw new BadRequestException('New vehicle is not available');
-      }
-      // Free old vehicle
       await this.prisma.vehicle.update({
         where: { id: assignment.vehicleId },
         data: { status: 'AVAILABLE' },
       });
-      // Assign new vehicle
-      await this.prisma.vehicle.update({
-        where: { id: vehicleId },
-        data: { status: 'ASSIGNED' },
-      });
     }
+    // Always mark the chosen vehicle as ASSIGNED
+    await this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: { status: 'ASSIGNED' },
+    });
 
     // Validate new driver
     if (driverId !== assignment.driverId) {
