@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth.store';
 import { UserRole } from '@if-fleet/domain';
+import { api } from '../lib/api';
 
 interface NavItem {
   label: string;
@@ -49,6 +51,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { user, clearAuth } = useAuthStore();
   const lastActivity = useRef<number>(Date.now());
 
+  const { data: sysConfig } = useQuery<{ sessionTimeoutMinutes: number }>({
+    queryKey: ['admin-config'],
+    queryFn: () => api.get('/admin/config').then((r) => r.data),
+    staleTime: 5 * 60_000,
+    enabled: !!user,
+  });
+  const timeoutMs = (sysConfig?.sessionTimeoutMinutes ?? 30) * 60_000;
+
   const handleLogout = () => {
     const rt = localStorage.getItem('if-fleet-rt');
     if (rt) {
@@ -75,7 +85,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
 
     const interval = setInterval(() => {
-      if (Date.now() - lastActivity.current > 30 * 60 * 1000) {
+      if (Date.now() - lastActivity.current > timeoutMs) {
         handleLogout();
       }
     }, 60_000);
@@ -85,7 +95,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, timeoutMs]);
 
   if (!user) return <>{children}</>;
 

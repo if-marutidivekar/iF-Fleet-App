@@ -57,6 +57,9 @@ export class BookingsService {
       dropoffLabel = dto.dropoffCustomAddress;
     }
 
+    const approvalMode = await this.checkApprovalMode();
+    const initialStatus = approvalMode === 'AUTO' ? 'APPROVED' : 'PENDING_APPROVAL';
+
     return this.prisma.booking.create({
       data: {
         requesterId,
@@ -70,7 +73,7 @@ export class BookingsService {
         dropoffCustomAddress: dto.dropoffCustomAddress ?? null,
         dropoffLabel: dropoffLabel ?? null,
         requestedAt: new Date(dto.requestedAt),
-        status: 'PENDING_APPROVAL',
+        status: initialStatus,
       },
       include: this.bookingInclude,
     });
@@ -139,7 +142,10 @@ export class BookingsService {
   }
 
   async cancel(id: string, userId: string, userRole: string) {
-    const booking = await this.prisma.booking.findUnique({ where: { id } });
+    const booking = await this.prisma.booking.findUnique({
+      where: { id },
+      include: { assignment: true },
+    });
     if (!booking) throw new NotFoundException('Booking not found');
 
     if (userRole !== UserRole.ADMIN && booking.requesterId !== userId) {
@@ -151,10 +157,25 @@ export class BookingsService {
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
 
+    // Free the vehicle when cancelling an ASSIGNED booking
+    if (booking.status === 'ASSIGNED' && booking.assignment) {
+      await this.prisma.vehicle.update({
+        where: { id: booking.assignment.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+
     return this.prisma.booking.update({
       where: { id },
       data: { status: 'CANCELLED' },
       include: this.bookingInclude,
     });
+  }
+
+  async checkApprovalMode(): Promise<'MANUAL' | 'AUTO'> {
+    const record = await this.prisma.appConfig.findUnique({
+      where: { key: 'booking.approvalMode' },
+    });
+    return (record?.value as 'MANUAL' | 'AUTO') ?? 'MANUAL';
   }
 }

@@ -16,6 +16,8 @@ interface SystemConfig {
   smtp: SmtpConfig | null;
   companyDomain: string;
   smtpConfigured: boolean;
+  approvalMode: 'MANUAL' | 'AUTO';
+  sessionTimeoutMinutes: number;
 }
 
 const EMPTY_SMTP: SmtpConfig = {
@@ -48,6 +50,10 @@ export function SettingsPage() {
   const [smtpReady, setSmtpReady] = useState(false);
   const [domain, setDomain] = useState('');
   const [domainReady, setDomainReady] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<'MANUAL' | 'AUTO'>('MANUAL');
+  const [approvalReady, setApprovalReady] = useState(false);
+  const [sessionTimeout, setSessionTimeout] = useState(30);
+  const [sessionReady, setSessionReady] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -59,6 +65,14 @@ export function SettingsPage() {
   if (cfg && !domainReady) {
     setDomainReady(true);
     setDomain(cfg.companyDomain ?? '');
+  }
+  if (cfg && !approvalReady) {
+    setApprovalReady(true);
+    setApprovalMode(cfg.approvalMode ?? 'MANUAL');
+  }
+  if (cfg && !sessionReady) {
+    setSessionReady(true);
+    setSessionTimeout(cfg.sessionTimeoutMinutes ?? 30);
   }
 
   const showToast = (msg: string, ok: boolean) => {
@@ -89,6 +103,18 @@ export function SettingsPage() {
     mutationFn: (d: string) => api.put('/admin/config/domain', { domain: d }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-config'] }); showToast('Company domain saved!', true); },
     onError: () => showToast('Failed to save domain', false),
+  });
+
+  const saveApproval = useMutation({
+    mutationFn: (mode: 'MANUAL' | 'AUTO') => api.put('/admin/config/approval-mode', { mode }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-config'] }); showToast('Approval mode saved!', true); },
+    onError: () => showToast('Failed to save approval mode', false),
+  });
+
+  const saveSession = useMutation({
+    mutationFn: (minutes: number) => api.put('/admin/config/session-timeout', { minutes }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-config'] }); showToast('Session timeout saved!', true); },
+    onError: () => showToast('Failed to save session timeout', false),
   });
 
   const field = (label: string, key: keyof SmtpConfig, type = 'text') => (
@@ -139,6 +165,90 @@ export function SettingsPage() {
         </label>
         <button style={s.btn} onClick={() => saveDomain.mutate(domain)} disabled={saveDomain.isPending || !domain.trim()}>
           {saveDomain.isPending ? 'Saving…' : 'Save Domain'}
+        </button>
+      </section>
+
+      {/* ── Booking Approval Mode ─────────────────────────────────── */}
+      <section style={s.card}>
+        <h2 style={s.cardTitle}>Booking Approval Mode</h2>
+        <p style={s.hint}>
+          <strong>Manual:</strong> Admin must approve each booking before drivers are assigned.<br />
+          <strong>Auto:</strong> New bookings are immediately approved and visible to all drivers who can self-assign a vehicle.
+        </p>
+
+        <div style={{ display: 'flex', gap: 12, marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+          {(['MANUAL', 'AUTO'] as const).map((mode) => (
+            <label
+              key={mode}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '0.6rem 1rem',
+                border: `2px solid ${approvalMode === mode ? '#2563eb' : '#e2e8f0'}`,
+                borderRadius: 8,
+                cursor: 'pointer',
+                background: approvalMode === mode ? '#eff6ff' : '#fff',
+                fontWeight: 600,
+                fontSize: 14,
+                color: approvalMode === mode ? '#1d4ed8' : '#374151',
+                transition: 'all 0.15s',
+              }}
+            >
+              <input
+                type="radio"
+                value={mode}
+                checked={approvalMode === mode}
+                onChange={() => setApprovalMode(mode)}
+                style={{ accentColor: '#2563eb' }}
+              />
+              {mode === 'MANUAL' ? '🔒 Manual Approve / Reject' : '⚡ Auto Approve (Drivers Self-Assign)'}
+            </label>
+          ))}
+        </div>
+
+        {approvalMode === 'AUTO' && (
+          <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: 13, color: '#713f12' }}>
+            ⚠ In Auto mode, bookings are immediately approved. Drivers will see available trips and pick a vehicle to self-assign. Admin can still cancel bookings.
+          </div>
+        )}
+
+        <button
+          style={s.btn}
+          onClick={() => saveApproval.mutate(approvalMode)}
+          disabled={saveApproval.isPending}
+        >
+          {saveApproval.isPending ? 'Saving…' : 'Save Approval Mode'}
+        </button>
+      </section>
+
+      {/* ── Session Timeout ───────────────────────────────────────── */}
+      <section style={s.card}>
+        <h2 style={s.cardTitle}>Web Session Timeout</h2>
+        <p style={s.hint}>
+          Automatically log out users after this many minutes of inactivity.
+          Range: 1 – 480 minutes (8 hours).
+        </p>
+        <label style={{ ...s.label, maxWidth: 240 }}>
+          Timeout (minutes)
+          <input
+            type="number"
+            min={1}
+            max={480}
+            style={s.input}
+            value={sessionTimeout}
+            onChange={(e) => setSessionTimeout(Math.max(1, Math.min(480, Number(e.target.value))))}
+          />
+        </label>
+        <div style={{ fontSize: 12, color: '#64748b', margin: '0.5rem 0 1rem' }}>
+          Currently: <strong>{sessionTimeout} min</strong> ({(sessionTimeout / 60).toFixed(1)} hours)
+        </div>
+        <button
+          style={s.btn}
+          onClick={() => saveSession.mutate(sessionTimeout)}
+          disabled={saveSession.isPending || sessionTimeout < 1}
+        >
+          {saveSession.isPending ? 'Saving…' : 'Save Timeout'}
         </button>
       </section>
 

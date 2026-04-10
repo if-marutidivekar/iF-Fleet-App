@@ -46,11 +46,24 @@ const STATUS_COLORS: Record<string, string> = {
   PENDING_APPROVAL: '#d97706',
   APPROVED: '#2563eb',
   ASSIGNED: '#7c3aed',
+  'ASSIGNED–PENDING': '#7c3aed',
+  'ASSIGNED–ACCEPTED': '#059669',
+  'ASSIGNED–DECLINED': '#dc2626',
   IN_TRIP: '#f97316',
   COMPLETED: '#059669',
   REJECTED: '#dc2626',
-  CANCELLED: '#dc2626',
+  CANCELLED: '#6b7280',
 };
+
+function getEffectiveStatus(booking: Booking): string {
+  if (booking.status === 'ASSIGNED' && booking.assignment) {
+    const d = booking.assignment.decision;
+    if (d === 'PENDING') return 'ASSIGNED–PENDING';
+    if (d === 'ACCEPTED') return 'ASSIGNED–ACCEPTED';
+    if (d === 'DECLINED') return 'ASSIGNED–DECLINED';
+  }
+  return booking.status;
+}
 
 const TABS = [
   { label: 'All', value: 'ALL' },
@@ -61,24 +74,30 @@ const TABS = [
   { label: 'Completed', value: 'COMPLETED' },
 ];
 
-function StatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? '#64748b';
+function StatusBadge({ booking }: { booking: Booking }) {
+  const eff = getEffectiveStatus(booking);
+  const color = STATUS_COLORS[eff] ?? '#64748b';
   return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 10px',
-        borderRadius: 12,
-        background: color + '1a',
-        color,
-        fontWeight: 600,
-        fontSize: 12,
-        border: `1px solid ${color}44`,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {status.replace(/_/g, ' ')}
-    </span>
+    <div>
+      <span
+        style={{
+          display: 'inline-block',
+          padding: '2px 10px',
+          borderRadius: 12,
+          background: color + '1a',
+          color,
+          fontWeight: 600,
+          fontSize: 12,
+          border: `1px solid ${color}44`,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {eff.replace(/_/g, ' ')}
+      </span>
+      {booking.status === 'REJECTED' && booking.rejectionReason && (
+        <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{booking.rejectionReason}</div>
+      )}
+    </div>
   );
 }
 
@@ -100,6 +119,7 @@ function BookingRow({
   const [reassigning, setReassigning] = useState(false);
   const [reassignVehicle, setReassignVehicle] = useState('');
   const [reassignDriver, setReassignDriver] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
   const approveMutation = useMutation({
     mutationFn: () => api.patch(`/bookings/${booking.id}/approve`),
@@ -137,6 +157,14 @@ function BookingRow({
       setReassigning(false);
       setReassignVehicle('');
       setReassignDriver('');
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.patch(`/bookings/${booking.id}/cancel`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings-admin'] });
+      setCancelling(false);
     },
   });
 
@@ -191,10 +219,7 @@ function BookingRow({
 
         {/* Status */}
         <td style={{ padding: '14px 16px' }}>
-          <StatusBadge status={booking.status} />
-          {booking.status === 'REJECTED' && booking.rejectionReason && (
-            <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{booking.rejectionReason}</div>
-          )}
+          <StatusBadge booking={booking} />
         </td>
 
         {/* Assignment */}
@@ -309,22 +334,53 @@ function BookingRow({
 
           {booking.status === 'ASSIGNED' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button
-                onClick={() => setReassigning((v) => !v)}
-                style={{
-                  background: '#f97316',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '5px 12px',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Reassign
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => { setReassigning((v) => !v); setCancelling(false); }}
+                  style={{
+                    background: '#f97316',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '5px 12px',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Reassign
+                </button>
+                <button
+                  onClick={() => { setCancelling((v) => !v); setReassigning(false); }}
+                  style={{
+                    background: '#fff',
+                    color: '#dc2626',
+                    border: '1px solid #dc2626',
+                    borderRadius: 6,
+                    padding: '5px 12px',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {cancelling && (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#dc2626' }}>Cancel this booking?</span>
+                  <button
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 5, padding: '4px 10px', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                  >
+                    {cancelMutation.isPending ? '...' : 'Confirm'}
+                  </button>
+                  <button onClick={() => setCancelling(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 12, cursor: 'pointer' }}>No</button>
+                </div>
+              )}
               {reassigning && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 200, marginTop: 6 }}>
                   <select
@@ -386,22 +442,53 @@ function BookingRow({
 
           {booking.status === 'APPROVED' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button
-                onClick={() => setAssigning((v) => !v)}
-                style={{
-                  background: '#7c3aed',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '5px 12px',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Assign
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => { setAssigning((v) => !v); setCancelling(false); }}
+                  style={{
+                    background: '#7c3aed',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '5px 12px',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Assign
+                </button>
+                <button
+                  onClick={() => { setCancelling((v) => !v); setAssigning(false); }}
+                  style={{
+                    background: '#fff',
+                    color: '#dc2626',
+                    border: '1px solid #dc2626',
+                    borderRadius: 6,
+                    padding: '5px 12px',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {cancelling && (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#dc2626' }}>Cancel this booking?</span>
+                  <button
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 5, padding: '4px 10px', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                  >
+                    {cancelMutation.isPending ? '...' : 'Confirm'}
+                  </button>
+                  <button onClick={() => setCancelling(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 12, cursor: 'pointer' }}>No</button>
+                </div>
+              )}
               {assigning && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 200 }}>
                   <select
