@@ -21,6 +21,7 @@ import { FleetMapPage } from './pages/admin/FleetMapPage';
 import { BookingQueuePage } from './pages/admin/BookingQueuePage';
 import { FleetMasterPage } from './pages/admin/FleetMasterPage';
 import { ReportsPage } from './pages/admin/ReportsPage';
+import { SettingsPage } from './pages/admin/SettingsPage';
 
 function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: UserRole[] }) {
   const { user, isAuthenticated } = useAuthStore();
@@ -65,6 +66,7 @@ export function App() {
         <Route path="/admin/bookings" element={<RequireAuth roles={[UserRole.ADMIN]}><BookingQueuePage /></RequireAuth>} />
         <Route path="/admin/fleet" element={<RequireAuth roles={[UserRole.ADMIN]}><FleetMasterPage /></RequireAuth>} />
         <Route path="/admin/reports" element={<RequireAuth roles={[UserRole.ADMIN]}><ReportsPage /></RequireAuth>} />
+        <Route path="/admin/settings" element={<RequireAuth roles={[UserRole.ADMIN]}><SettingsPage /></RequireAuth>} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

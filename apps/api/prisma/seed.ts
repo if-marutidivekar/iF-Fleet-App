@@ -3,11 +3,11 @@
  * Run: pnpm --filter @if-fleet/api db:seed
  *
  * Creates demo accounts for QA/UAT:
- *   Admin:    admin@company.com    / EMP-ADMIN-001
- *   Employee: employee@company.com / EMP-001
- *   Driver:   driver@company.com   / EMP-DRV-001
+ *   Admin:    admin@ideaforgetech.com    / EMP-ADMIN-001
+ *   Employee: employee@ideaforgetech.com / EMP-001
+ *   Driver:   driver@ideaforgetech.com   / EMP-DRV-001
  *
- * Also seeds: vehicles, driver profile, preset locations.
+ * Also seeds: vehicles, driver profile, preset locations, app config.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -17,38 +17,52 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding iF Fleet staging database…');
 
+  // ── Migrate legacy @company.com emails if present ──────────────────────────
+  await prisma.user.updateMany({
+    where: { email: 'admin@company.com' },
+    data: { email: 'admin@ideaforgetech.com' },
+  });
+  await prisma.user.updateMany({
+    where: { email: 'employee@company.com' },
+    data: { email: 'employee@ideaforgetech.com' },
+  });
+  await prisma.user.updateMany({
+    where: { email: 'driver@company.com' },
+    data: { email: 'driver@ideaforgetech.com' },
+  });
+
   // ── Users ──────────────────────────────────────────────────────────────────
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@company.com' },
+    where: { email: 'admin@ideaforgetech.com' },
     update: {},
     create: {
       employeeId: 'EMP-ADMIN-001',
       name: 'Fleet Administrator',
-      email: 'admin@company.com',
+      email: 'admin@ideaforgetech.com',
       role: 'ADMIN',
       status: 'ACTIVE',
     },
   });
 
   const employee = await prisma.user.upsert({
-    where: { email: 'employee@company.com' },
+    where: { email: 'employee@ideaforgetech.com' },
     update: {},
     create: {
       employeeId: 'EMP-001',
       name: 'Jane Employee',
-      email: 'employee@company.com',
+      email: 'employee@ideaforgetech.com',
       role: 'EMPLOYEE',
       status: 'ACTIVE',
     },
   });
 
   const driverUser = await prisma.user.upsert({
-    where: { email: 'driver@company.com' },
+    where: { email: 'driver@ideaforgetech.com' },
     update: {},
     create: {
       employeeId: 'EMP-DRV-001',
       name: 'John Driver',
-      email: 'driver@company.com',
+      email: 'driver@ideaforgetech.com',
       role: 'DRIVER',
       status: 'ACTIVE',
     },
@@ -163,6 +177,14 @@ async function main() {
       },
     }),
   ]);
+
+  // ── App Config (bootstrap defaults) ────────────────────────────────────────
+  await prisma.appConfig.upsert({
+    where: { key: 'auth.companyDomain' },
+    update: {},
+    create: { key: 'auth.companyDomain', value: 'ideaforgetech.com' },
+  });
+  console.log('✓ AppConfig: auth.companyDomain = ideaforgetech.com');
 
   console.log(`✓ Users: admin(${admin.id}), employee(${employee.id}), driver(${driverUser.id})`);
   console.log(`✓ Driver profile: ${driverProfile.id}`);
