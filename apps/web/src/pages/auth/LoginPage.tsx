@@ -14,29 +14,32 @@ export function LoginPage() {
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
 
   const requestOtp = useMutation({
-    mutationFn: (email: string) => api.post('/auth/request-otp', { email }),
+    mutationFn: (addr: string) => api.post('/auth/request-otp', { email: addr }),
     onSuccess: () => { setStep('otp'); setError(''); },
-    onError: () => setError('Could not send OTP. Check your email address.'),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
+      setError(typeof msg === 'string' ? msg : 'Could not send OTP. Check your email address.');
+    },
   });
 
   const verifyOtp = useMutation({
-    mutationFn: ({ email, employeeId, otp }: { email: string; employeeId: string; otp: string }) =>
-      api.post<{ accessToken: string; refreshToken: string; user: { id: string; name: string; email: string; role: UserRole } }>(
-        '/auth/verify-otp',
-        { email, employeeId, otp },
-      ),
+    mutationFn: ({ email: addr, otp: code }: { email: string; otp: string }) =>
+      api.post<{
+        accessToken: string;
+        refreshToken: string;
+        user: { id: string; name: string; email: string; role: UserRole };
+      }>('/auth/verify-otp', { email: addr, otp: code }),
     onSuccess: ({ data }) => {
       setAuth(data.user, data.accessToken);
-      // Store refresh token in httpOnly cookie via a separate endpoint in production
       localStorage.setItem('if-fleet-rt', data.refreshToken);
       navigate('/');
     },
-    onError: () => setError('Invalid OTP or employee ID. Please try again.'),
+    onError: () => setError('Invalid or expired OTP. Please try again.'),
   });
 
   return (
@@ -55,7 +58,7 @@ export function LoginPage() {
               <input
                 type="email"
                 className={styles.input}
-                placeholder="you@company.com"
+                placeholder="you@ideaforgetech.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -63,32 +66,18 @@ export function LoginPage() {
               />
             </label>
             {error && <p className={styles.error}>{error}</p>}
-            <button
-              type="submit"
-              className={styles.btn}
-              disabled={requestOtp.isPending}
-            >
+            <button type="submit" className={styles.btn} disabled={requestOtp.isPending}>
               {requestOtp.isPending ? 'Sending…' : 'Send OTP'}
             </button>
           </form>
         ) : (
           <form
-            onSubmit={(e) => { e.preventDefault(); verifyOtp.mutate({ email, employeeId, otp }); }}
+            onSubmit={(e) => { e.preventDefault(); verifyOtp.mutate({ email, otp }); }}
             className={styles.form}
           >
-            <p className={styles.hint}>OTP sent to <strong>{email}</strong></p>
-            <label className={styles.label}>
-              Employee ID
-              <input
-                type="text"
-                className={styles.input}
-                placeholder="EMP-1042"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                required
-                autoFocus
-              />
-            </label>
+            <p className={styles.hint}>
+              OTP sent to <strong>{email}</strong>
+            </p>
             <label className={styles.label}>
               One-time password
               <input
@@ -100,6 +89,7 @@ export function LoginPage() {
                 inputMode="numeric"
                 maxLength={6}
                 required
+                autoFocus
               />
             </label>
             {error && <p className={styles.error}>{error}</p>}

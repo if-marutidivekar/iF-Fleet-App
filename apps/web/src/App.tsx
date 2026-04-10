@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserRole } from '@if-fleet/domain';
 import { useAuthStore } from './stores/auth.store';
+import { Layout } from './components/Layout';
 
 // Auth pages
 import { LoginPage } from './pages/auth/LoginPage';
@@ -22,6 +23,7 @@ import { BookingQueuePage } from './pages/admin/BookingQueuePage';
 import { FleetMasterPage } from './pages/admin/FleetMasterPage';
 import { ReportsPage } from './pages/admin/ReportsPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
+import { UsersPage } from './pages/admin/UsersPage';
 
 function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: UserRole[] }) {
   const { user, isAuthenticated } = useAuthStore();
@@ -29,7 +31,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: U
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
-  return <>{children}</>;
+  return <Layout>{children}</Layout>;
 }
 
 function RoleHome() {
@@ -65,6 +67,7 @@ export function App() {
         <Route path="/admin/map" element={<RequireAuth roles={[UserRole.ADMIN]}><FleetMapPage /></RequireAuth>} />
         <Route path="/admin/bookings" element={<RequireAuth roles={[UserRole.ADMIN]}><BookingQueuePage /></RequireAuth>} />
         <Route path="/admin/fleet" element={<RequireAuth roles={[UserRole.ADMIN]}><FleetMasterPage /></RequireAuth>} />
+        <Route path="/admin/users" element={<RequireAuth roles={[UserRole.ADMIN]}><UsersPage /></RequireAuth>} />
         <Route path="/admin/reports" element={<RequireAuth roles={[UserRole.ADMIN]}><ReportsPage /></RequireAuth>} />
         <Route path="/admin/settings" element={<RequireAuth roles={[UserRole.ADMIN]}><SettingsPage /></RequireAuth>} />
 

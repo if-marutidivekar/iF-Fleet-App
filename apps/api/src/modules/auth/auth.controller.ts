@@ -18,9 +18,9 @@ export class AuthController {
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP + employee ID; returns JWT tokens' })
+  @ApiOperation({ summary: 'Verify OTP; returns JWT tokens' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto.email, dto.employeeId, dto.otp);
+    return this.authService.verifyOtp(dto.email, dto.otp);
   }
 
   @Post('refresh')

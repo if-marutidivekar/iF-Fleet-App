@@ -13,6 +13,7 @@ export function AdminDashboard() {
     { label: 'Booking Queue', icon: '📋', path: '/admin/bookings' },
     { label: 'Fleet Map', icon: '🗺️', path: '/admin/map' },
     { label: 'Fleet Master', icon: '🚗', path: '/admin/fleet' },
+    { label: 'Users', icon: '👥', path: '/admin/users' },
     { label: 'Reports', icon: '📊', path: '/admin/reports' },
     { label: 'Settings', icon: '⚙️', path: '/admin/settings' },
   ];

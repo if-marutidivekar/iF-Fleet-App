@@ -17,27 +17,27 @@ export default function LoginScreen() {
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
 
   const requestOtp = useMutation({
-    mutationFn: (email: string) => api.post('/auth/request-otp', { email }),
+    mutationFn: (addr: string) => api.post('/auth/request-otp', { email: addr }),
     onSuccess: () => { setStep('otp'); setError(''); },
     onError: () => setError('Could not send OTP. Check your email address.'),
   });
 
   const verifyOtp = useMutation({
-    mutationFn: ({ email, employeeId, otp }: { email: string; employeeId: string; otp: string }) =>
-      api.post<{ accessToken: string; refreshToken: string; user: { id: string; name: string; email: string; role: UserRole } }>(
-        '/auth/verify-otp',
-        { email, employeeId, otp },
-      ),
+    mutationFn: ({ email: addr, otp: code }: { email: string; otp: string }) =>
+      api.post<{
+        accessToken: string;
+        refreshToken: string;
+        user: { id: string; name: string; email: string; role: UserRole };
+      }>('/auth/verify-otp', { email: addr, otp: code }),
     onSuccess: ({ data }) => {
       setAuth(data.user, data.accessToken);
       router.replace('/');
     },
-    onError: () => setError('Invalid OTP or employee ID.'),
+    onError: () => setError('Invalid or expired OTP. Please try again.'),
   });
 
   return (
@@ -54,7 +54,7 @@ export default function LoginScreen() {
             <Text style={styles.label}>Company email</Text>
             <TextInput
               style={styles.input}
-              placeholder="you@company.com"
+              placeholder="you@ideaforgetech.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -75,15 +75,6 @@ export default function LoginScreen() {
         ) : (
           <>
             <Text style={styles.hint}>OTP sent to {email}</Text>
-            <Text style={styles.label}>Employee ID</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="EMP-1042"
-              value={employeeId}
-              onChangeText={setEmployeeId}
-              autoCapitalize="characters"
-              autoFocus
-            />
             <Text style={styles.label}>One-time password</Text>
             <TextInput
               style={styles.input}
@@ -92,11 +83,12 @@ export default function LoginScreen() {
               onChangeText={(v) => setOtp(v.replace(/\D/g, '').slice(0, 6))}
               keyboardType="number-pad"
               maxLength={6}
+              autoFocus
             />
             {!!error && <Text style={styles.error}>{error}</Text>}
             <TouchableOpacity
               style={[styles.btn, (verifyOtp.isPending || otp.length !== 6) && styles.btnDisabled]}
-              onPress={() => verifyOtp.mutate({ email, employeeId, otp })}
+              onPress={() => verifyOtp.mutate({ email, otp })}
               disabled={verifyOtp.isPending || otp.length !== 6}
             >
               {verifyOtp.isPending

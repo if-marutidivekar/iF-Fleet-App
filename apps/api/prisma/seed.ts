@@ -32,6 +32,20 @@ async function main() {
   });
 
   // ── Users ──────────────────────────────────────────────────────────────────
+
+  // System admin account (used for sending OTPs / system operations)
+  await prisma.user.upsert({
+    where: { email: 'noreply-if-fleet@ideaforgetech.com' },
+    update: { role: 'ADMIN', status: 'ACTIVE' },
+    create: {
+      employeeId: 'EMP-SYSTEM-001',
+      name: 'iF Fleet System',
+      email: 'noreply-if-fleet@ideaforgetech.com',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+    },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: 'admin@ideaforgetech.com' },
     update: {},
