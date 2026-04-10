@@ -43,14 +43,13 @@ export class TripsController {
   }
 
   @Post(':id/complete')
-  @Roles(UserRole.DRIVER)
   @ApiOperation({ summary: 'Driver completes the trip' })
   completeTrip(
     @Param('id') id: string,
     @Body() dto: CompleteTripDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.tripsService.completeTrip(id, dto, user.sub);
+    return this.tripsService.completeTrip(id, dto, user.sub, user.role);
   }
 
   @Get()

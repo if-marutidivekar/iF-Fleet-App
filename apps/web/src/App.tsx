@@ -61,6 +61,7 @@ export function App() {
         {/* Driver */}
         <Route path="/driver" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverDashboard /></RequireAuth>} />
         <Route path="/driver/trip/:tripId" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
+        <Route path="/driver/assignments" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
 
         {/* Admin */}
         <Route path="/admin" element={<RequireAuth roles={[UserRole.ADMIN]}><AdminDashboard /></RequireAuth>} />

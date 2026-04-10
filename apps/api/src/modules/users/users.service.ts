@@ -59,22 +59,23 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
+    const whereOr: { email?: string; employeeId?: string }[] = [{ email: dto.email }];
+    if (dto.employeeId) whereOr.push({ employeeId: dto.employeeId });
     const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email: dto.email }, { employeeId: dto.employeeId }],
-        deletedAt: null,
-      },
+      where: { OR: whereOr, deletedAt: null },
     });
 
     if (existing) {
       throw new ConflictException('User with this email or employee ID already exists');
     }
 
+    const employeeId = dto.employeeId || `EMP-${Math.floor(100000 + Math.random() * 900000)}`;
+
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
-        employeeId: dto.employeeId,
+        employeeId,
         phone: dto.phone ?? null,
         role: dto.role ?? 'EMPLOYEE',
         status: 'ACTIVE',
@@ -108,6 +109,7 @@ export class UsersService {
         ...(dto.phone !== undefined && { phone: dto.phone }),
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.role !== undefined && { role: dto.role }),
+        ...(dto.employeeId !== undefined && { employeeId: dto.employeeId }),
       },
       include: { driverProfile: { select: { id: true } } },
     });

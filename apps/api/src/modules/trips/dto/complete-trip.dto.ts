@@ -3,11 +3,12 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CompleteTripDto {
-  @ApiProperty({ example: 12500.5 })
+  @ApiPropertyOptional({ example: 12500.5 })
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  odometerEnd!: number;
+  odometerEnd?: number;
 
   @ApiPropertyOptional({ example: 'Smooth trip, no issues' })
   @IsOptional()

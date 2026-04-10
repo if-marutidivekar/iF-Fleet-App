@@ -26,6 +26,7 @@ interface DriverProfile {
     name: string;
     email: string;
     employeeId: string;
+    phone?: string;
   };
 }
 
@@ -36,6 +37,14 @@ interface PresetLocation {
   isActive: boolean;
   latitude?: number;
   longitude?: number;
+}
+
+interface UserBasic {
+  id: string;
+  name: string;
+  email: string;
+  employeeId: string;
+  hasDriverProfile: boolean;
 }
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
@@ -70,16 +79,38 @@ const vehicleStatusColor: Record<string, string> = {
   INACTIVE: '#94a3b8',
 };
 
+const inputStyle: React.CSSProperties = {
+  padding: '0.4rem 0.6rem',
+  border: '1.5px solid #e2e8f0',
+  borderRadius: 6,
+  fontSize: 13,
+  width: '100%',
+  boxSizing: 'border-box',
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: '0.4rem 0.6rem',
+  border: '1.5px solid #e2e8f0',
+  borderRadius: 6,
+  fontSize: 13,
+  background: '#fff',
+  width: '100%',
+  boxSizing: 'border-box',
+};
+
 // ─── Vehicles Tab ─────────────────────────────────────────────────────────────
 
 const VEHICLE_TYPES = ['SEDAN', 'SUV', 'VAN', 'TRUCK', 'BUS'];
 const OWNERSHIP_TYPES = ['OWNED', 'LEASED', 'HIRED'];
+const VEHICLE_STATUSES = ['AVAILABLE', 'ASSIGNED', 'IN_TRIP', 'MAINTENANCE', 'INACTIVE'];
 
 function VehiclesTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ vehicleNo: '', type: 'SEDAN', make: '', model: '', year: '', capacity: '4', ownership: 'OWNED' });
   const [formError, setFormError] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ make: '', model: '', year: '', capacity: '', ownership: 'OWNED', status: 'AVAILABLE', type: 'SEDAN' });
 
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({
     queryKey: ['fleet-vehicles'],
@@ -105,6 +136,32 @@ function VehiclesTab() {
     mutationFn: ({ id, status }: { id: string; status: string }) => api.patch(`/fleet/vehicles/${id}`, { status }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['fleet-vehicles'] }),
   });
+
+  const editVehicle = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof editForm }) =>
+      api.patch(`/fleet/vehicles/${id}`, {
+        ...data,
+        year: data.year ? parseInt(data.year) : undefined,
+        capacity: data.capacity ? parseInt(data.capacity) : undefined,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-vehicles'] });
+      setEditId(null);
+    },
+  });
+
+  const startEdit = (v: Vehicle) => {
+    setEditId(v.id);
+    setEditForm({
+      make: v.make ?? '',
+      model: v.model ?? '',
+      year: v.year ? String(v.year) : '',
+      capacity: String(v.capacity),
+      ownership: v.ownership,
+      status: v.status,
+      type: v.type,
+    });
+  };
 
   return (
     <div>
@@ -132,19 +189,19 @@ function VehiclesTab() {
                   placeholder={f.placeholder}
                   value={form[f.key as keyof typeof form]}
                   onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                  style={{ padding: '0.4rem 0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13 }}
+                  style={inputStyle}
                 />
               </label>
             ))}
             <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
               <span style={{ fontWeight: 600, color: '#374151' }}>Type</span>
-              <select value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))} style={{ padding: '0.4rem 0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13, background: '#fff' }}>
+              <select value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))} style={selectStyle}>
                 {VEHICLE_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
               <span style={{ fontWeight: 600, color: '#374151' }}>Ownership</span>
-              <select value={form.ownership} onChange={(e) => setForm((p) => ({ ...p, ownership: e.target.value }))} style={{ padding: '0.4rem 0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13, background: '#fff' }}>
+              <select value={form.ownership} onChange={(e) => setForm((p) => ({ ...p, ownership: e.target.value }))} style={selectStyle}>
                 {OWNERSHIP_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </label>
@@ -170,28 +227,93 @@ function VehiclesTab() {
             </thead>
             <tbody>
               {vehicles.map((v, i) => (
-                <tr key={v.id} style={{ borderBottom: i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{v.vehicleNo}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.type}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.capacity}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{v.ownership}</td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: vehicleStatusColor[v.status] ?? '#64748b' }}>{v.status}</span>
-                  </td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    {v.status === 'AVAILABLE' && (
-                      <button onClick={() => updateStatus.mutate({ id: v.id, status: 'MAINTENANCE' })} style={{ padding: '0.2rem 0.5rem', background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                        Maintenance
+                <>
+                  <tr key={v.id} style={{ borderBottom: editId === v.id ? 'none' : (i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none') }}>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{v.vehicleNo}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.type}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.capacity}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{v.ownership}</td>
+                    <td style={{ padding: '0.625rem 0.875rem' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: vehicleStatusColor[v.status] ?? '#64748b' }}>{v.status}</span>
+                    </td>
+                    <td style={{ padding: '0.625rem 0.875rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => editId === v.id ? setEditId(null) : startEdit(v)}
+                        style={{ padding: '0.2rem 0.5rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {editId === v.id ? 'Cancel' : 'Edit'}
                       </button>
-                    )}
-                    {v.status === 'MAINTENANCE' && (
-                      <button onClick={() => updateStatus.mutate({ id: v.id, status: 'AVAILABLE' })} style={{ padding: '0.2rem 0.5rem', background: '#f0fdf4', color: '#059669', border: '1px solid #bbf7d0', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                        Reactivate
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                      {v.status === 'AVAILABLE' && (
+                        <button onClick={() => updateStatus.mutate({ id: v.id, status: 'MAINTENANCE' })} style={{ padding: '0.2rem 0.5rem', background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Maintenance
+                        </button>
+                      )}
+                      {v.status === 'MAINTENANCE' && (
+                        <button onClick={() => updateStatus.mutate({ id: v.id, status: 'AVAILABLE' })} style={{ padding: '0.2rem 0.5rem', background: '#f0fdf4', color: '#059669', border: '1px solid #bbf7d0', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Reactivate
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {editId === v.id && (
+                    <tr key={`${v.id}-edit`} style={{ borderBottom: i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f8fafc' }}>
+                      <td colSpan={7} style={{ padding: '0.875rem 1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', alignItems: 'end' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Make</span>
+                            <input value={editForm.make} onChange={(e) => setEditForm((p) => ({ ...p, make: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Model</span>
+                            <input value={editForm.model} onChange={(e) => setEditForm((p) => ({ ...p, model: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Year</span>
+                            <input value={editForm.year} onChange={(e) => setEditForm((p) => ({ ...p, year: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Capacity</span>
+                            <input value={editForm.capacity} onChange={(e) => setEditForm((p) => ({ ...p, capacity: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Type</span>
+                            <select value={editForm.type} onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value }))} style={selectStyle}>
+                              {VEHICLE_TYPES.map((t) => <option key={t}>{t}</option>)}
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Ownership</span>
+                            <select value={editForm.ownership} onChange={(e) => setEditForm((p) => ({ ...p, ownership: e.target.value }))} style={selectStyle}>
+                              {OWNERSHIP_TYPES.map((t) => <option key={t}>{t}</option>)}
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Status</span>
+                            <select value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))} style={selectStyle}>
+                              {VEHICLE_STATUSES.map((s) => <option key={s}>{s}</option>)}
+                            </select>
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.625rem' }}>
+                          <button
+                            onClick={() => editVehicle.mutate({ id: v.id, data: editForm })}
+                            disabled={editVehicle.isPending}
+                            style={{ padding: '0.3rem 0.875rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {editVehicle.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditId(null)}
+                            style={{ padding: '0.3rem 0.875rem', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
               {vehicles.length === 0 && (
                 <tr><td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No vehicles registered</td></tr>
@@ -209,20 +331,32 @@ function VehiclesTab() {
 function DriversTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ userId: '', licenseNumber: '', licenseExpiry: '' });
+  const [form, setForm] = useState({ licenseNumber: '', licenseExpiry: '' });
   const [formError, setFormError] = useState('');
+  const [driverEmail, setDriverEmail] = useState('');
+  const [foundUser, setFoundUser] = useState<{ id: string; name: string } | null>(null);
+  const [editDriverId, setEditDriverId] = useState<string | null>(null);
+  const [editDriverForm, setEditDriverForm] = useState({ licenseNumber: '', licenseExpiry: '', shiftReady: false });
 
   const { data: drivers = [], isLoading } = useQuery<DriverProfile[]>({
     queryKey: ['fleet-drivers'],
     queryFn: () => api.get<DriverProfile[]>('/fleet/drivers').then((r) => r.data),
   });
 
+  const { data: allUsers = [] } = useQuery<UserBasic[]>({
+    queryKey: ['all-users-for-driver'],
+    queryFn: () => api.get<UserBasic[]>('/users').then((r) => r.data),
+  });
+
   const createDriver = useMutation({
-    mutationFn: (data: typeof form) => api.post('/fleet/drivers', data),
+    mutationFn: (data: { userId: string; licenseNumber: string; licenseExpiry: string }) =>
+      api.post('/fleet/drivers', data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['fleet-drivers'] });
       setShowForm(false);
-      setForm({ userId: '', licenseNumber: '', licenseExpiry: '' });
+      setForm({ licenseNumber: '', licenseExpiry: '' });
+      setDriverEmail('');
+      setFoundUser(null);
       setFormError('');
     },
     onError: (e: unknown) => {
@@ -236,6 +370,30 @@ function DriversTab() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['fleet-drivers'] }),
   });
 
+  const editDriver = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof editDriverForm }) =>
+      api.patch(`/fleet/drivers/${id}`, data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-drivers'] });
+      setEditDriverId(null);
+    },
+  });
+
+  const handleEmailChange = (val: string) => {
+    setDriverEmail(val);
+    const match = allUsers.find((u) => u.email.toLowerCase() === val.toLowerCase());
+    setFoundUser(match ? { id: match.id, name: match.name } : null);
+  };
+
+  const startEditDriver = (d: DriverProfile) => {
+    setEditDriverId(d.id);
+    setEditDriverForm({
+      licenseNumber: d.licenseNumber,
+      licenseExpiry: d.licenseExpiry.split('T')[0] ?? d.licenseExpiry,
+      shiftReady: d.shiftReady,
+    });
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
@@ -247,21 +405,52 @@ function DriversTab() {
       {showForm && (
         <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: '0.5rem', color: '#0f172a' }}>New Driver Profile</h3>
-          <p style={{ fontSize: 12, color: '#64748b', marginBottom: '0.75rem' }}>User must exist. Copy the User ID from the Users page.</p>
+          <p style={{ fontSize: 12, color: '#64748b', marginBottom: '0.75rem' }}>Type the user's email to look them up</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.625rem' }}>
-            {([
-              { label: 'User ID (UUID)', key: 'userId', placeholder: 'user-uuid', type: 'text' },
-              { label: 'License Number', key: 'licenseNumber', placeholder: 'MH1220240012345', type: 'text' },
-              { label: 'License Expiry', key: 'licenseExpiry', placeholder: '', type: 'date' },
-            ] as { label: string; key: string; placeholder: string; type: string }[]).map((f) => (
-              <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
-                <span style={{ fontWeight: 600, color: '#374151' }}>{f.label}</span>
-                <input type={f.type} placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))} style={{ padding: '0.4rem 0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13 }} />
-              </label>
-            ))}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: '#374151' }}>Email ID</span>
+              <input
+                type="email"
+                placeholder="driver@ideaforgetech.com"
+                value={driverEmail}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                style={inputStyle}
+              />
+              {driverEmail && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: foundUser ? '#059669' : '#dc2626' }}>
+                  {foundUser ? `✓ User found: ${foundUser.name}` : '✗ User not found'}
+                </span>
+              )}
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: '#374151' }}>License Number</span>
+              <input
+                type="text"
+                placeholder="MH1220240012345"
+                value={form.licenseNumber}
+                onChange={(e) => setForm((p) => ({ ...p, licenseNumber: e.target.value }))}
+                style={inputStyle}
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: '#374151' }}>License Expiry</span>
+              <input
+                type="date"
+                value={form.licenseExpiry}
+                onChange={(e) => setForm((p) => ({ ...p, licenseExpiry: e.target.value }))}
+                style={inputStyle}
+              />
+            </label>
           </div>
           {formError && <p style={{ color: '#dc2626', fontSize: 12, marginTop: '0.5rem' }}>{formError}</p>}
-          <button onClick={() => createDriver.mutate(form)} disabled={createDriver.isPending || !form.userId || !form.licenseNumber || !form.licenseExpiry} style={{ marginTop: '0.875rem', padding: '0.45rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          <button
+            onClick={() => {
+              if (!foundUser) return;
+              createDriver.mutate({ userId: foundUser.id, licenseNumber: form.licenseNumber, licenseExpiry: form.licenseExpiry });
+            }}
+            disabled={createDriver.isPending || !foundUser || !form.licenseNumber || !form.licenseExpiry}
+            style={{ marginTop: '0.875rem', padding: '0.45rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: (!foundUser || !form.licenseNumber || !form.licenseExpiry) ? 0.5 : 1 }}
+          >
             {createDriver.isPending ? 'Creating...' : 'Create Driver Profile'}
           </button>
         </div>
@@ -274,30 +463,81 @@ function DriversTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
-                {['Driver Name', 'Employee ID', 'License No', 'Expiry', 'Shift Ready', 'Actions'].map((h) => (
+                {['Driver Name', 'Employee ID', 'Email', 'Phone', 'License No', 'Expiry', 'Shift Ready', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '0.625rem 0.875rem', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {drivers.map((d, i) => (
-                <tr key={d.id} style={{ borderBottom: i < drivers.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{d.user.name}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{d.user.employeeId}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{d.licenseNumber}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{new Date(d.licenseExpiry).toLocaleDateString()}</td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: d.shiftReady ? '#059669' : '#94a3b8' }}>{d.shiftReady ? 'Yes' : 'No'}</span>
-                  </td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    <button onClick={() => toggleShiftReady.mutate({ id: d.id, shiftReady: !d.shiftReady })} style={{ padding: '0.2rem 0.5rem', background: d.shiftReady ? '#fef2f2' : '#f0fdf4', color: d.shiftReady ? '#dc2626' : '#059669', border: `1px solid ${d.shiftReady ? '#fecaca' : '#bbf7d0'}`, borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                      {d.shiftReady ? 'Mark Off-Shift' : 'Mark Ready'}
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr key={d.id} style={{ borderBottom: editDriverId === d.id ? 'none' : (i < drivers.length - 1 ? '1px solid #f1f5f9' : 'none') }}>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{d.user.name}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{d.user.employeeId}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{d.user.email}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{d.user.phone ?? '—'}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{d.licenseNumber}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{new Date(d.licenseExpiry).toLocaleDateString()}</td>
+                    <td style={{ padding: '0.625rem 0.875rem' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: d.shiftReady ? '#059669' : '#94a3b8' }}>{d.shiftReady ? 'Yes' : 'No'}</span>
+                    </td>
+                    <td style={{ padding: '0.625rem 0.875rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => editDriverId === d.id ? setEditDriverId(null) : startEditDriver(d)}
+                        style={{ padding: '0.2rem 0.5rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {editDriverId === d.id ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => toggleShiftReady.mutate({ id: d.id, shiftReady: !d.shiftReady })}
+                        style={{ padding: '0.2rem 0.5rem', background: d.shiftReady ? '#fef2f2' : '#f0fdf4', color: d.shiftReady ? '#dc2626' : '#059669', border: `1px solid ${d.shiftReady ? '#fecaca' : '#bbf7d0'}`, borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {d.shiftReady ? 'Mark Off-Shift' : 'Mark Ready'}
+                      </button>
+                    </td>
+                  </tr>
+                  {editDriverId === d.id && (
+                    <tr key={`${d.id}-edit`} style={{ borderBottom: i < drivers.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f8fafc' }}>
+                      <td colSpan={8} style={{ padding: '0.875rem 1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>License Number</span>
+                            <input value={editDriverForm.licenseNumber} onChange={(e) => setEditDriverForm((p) => ({ ...p, licenseNumber: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>License Expiry</span>
+                            <input type="date" value={editDriverForm.licenseExpiry} onChange={(e) => setEditDriverForm((p) => ({ ...p, licenseExpiry: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Shift Ready</span>
+                            <select value={editDriverForm.shiftReady ? 'true' : 'false'} onChange={(e) => setEditDriverForm((p) => ({ ...p, shiftReady: e.target.value === 'true' }))} style={selectStyle}>
+                              <option value="true">Yes</option>
+                              <option value="false">No</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.625rem' }}>
+                          <button
+                            onClick={() => editDriver.mutate({ id: d.id, data: editDriverForm })}
+                            disabled={editDriver.isPending}
+                            style={{ padding: '0.3rem 0.875rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {editDriver.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditDriverId(null)}
+                            style={{ padding: '0.3rem 0.875rem', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
               {drivers.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No driver profiles</td></tr>
+                <tr><td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No driver profiles</td></tr>
               )}
             </tbody>
           </table>
@@ -314,6 +554,8 @@ function LocationsTab() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', latitude: '', longitude: '' });
   const [formError, setFormError] = useState('');
+  const [editLocId, setEditLocId] = useState<string | null>(null);
+  const [editLocForm, setEditLocForm] = useState({ name: '', address: '', latitude: '', longitude: '', isActive: true });
 
   const { data: locations = [], isLoading } = useQuery<PresetLocation[]>({
     queryKey: ['fleet-locations-all'],
@@ -338,8 +580,38 @@ function LocationsTab() {
 
   const toggleActive = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api.patch(`/fleet/locations/${id}`, { isActive }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['fleet-locations-all'] }); void qc.invalidateQueries({ queryKey: ['fleet-locations'] }); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-locations-all'] });
+      void qc.invalidateQueries({ queryKey: ['fleet-locations'] });
+    },
   });
+
+  const editLocation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof editLocForm }) =>
+      api.patch(`/fleet/locations/${id}`, {
+        name: data.name,
+        address: data.address,
+        latitude: data.latitude ? parseFloat(data.latitude) : undefined,
+        longitude: data.longitude ? parseFloat(data.longitude) : undefined,
+        isActive: data.isActive,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-locations-all'] });
+      void qc.invalidateQueries({ queryKey: ['fleet-locations'] });
+      setEditLocId(null);
+    },
+  });
+
+  const startEditLoc = (loc: PresetLocation) => {
+    setEditLocId(loc.id);
+    setEditLocForm({
+      name: loc.name,
+      address: loc.address,
+      latitude: loc.latitude ? String(loc.latitude) : '',
+      longitude: loc.longitude ? String(loc.longitude) : '',
+      isActive: loc.isActive,
+    });
+  };
 
   return (
     <div>
@@ -361,7 +633,7 @@ function LocationsTab() {
             ] as { label: string; key: string; placeholder: string }[]).map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
                 <span style={{ fontWeight: 600, color: '#374151' }}>{f.label}</span>
-                <input type="text" placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))} style={{ padding: '0.4rem 0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13 }} />
+                <input type="text" placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))} style={inputStyle} />
               </label>
             ))}
           </div>
@@ -386,21 +658,78 @@ function LocationsTab() {
             </thead>
             <tbody>
               {locations.map((loc, i) => (
-                <tr key={loc.id} style={{ borderBottom: i < locations.length - 1 ? '1px solid #f1f5f9' : 'none', opacity: loc.isActive ? 1 : 0.55 }}>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{loc.name}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151', maxWidth: 280 }}>{loc.address}</td>
-                  <td style={{ padding: '0.625rem 0.875rem', fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>
-                    {loc.latitude && loc.longitude ? `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}` : '—'}
-                  </td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: loc.isActive ? '#059669' : '#94a3b8' }}>{loc.isActive ? 'Active' : 'Inactive'}</span>
-                  </td>
-                  <td style={{ padding: '0.625rem 0.875rem' }}>
-                    <button onClick={() => toggleActive.mutate({ id: loc.id, isActive: !loc.isActive })} style={{ padding: '0.2rem 0.5rem', background: loc.isActive ? '#fef2f2' : '#f0fdf4', color: loc.isActive ? '#dc2626' : '#059669', border: `1px solid ${loc.isActive ? '#fecaca' : '#bbf7d0'}`, borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                      {loc.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr key={loc.id} style={{ borderBottom: editLocId === loc.id ? 'none' : (i < locations.length - 1 ? '1px solid #f1f5f9' : 'none'), opacity: loc.isActive ? 1 : 0.55 }}>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{loc.name}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151', maxWidth: 280 }}>{loc.address}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>
+                      {loc.latitude && loc.longitude ? `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}` : '—'}
+                    </td>
+                    <td style={{ padding: '0.625rem 0.875rem' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: loc.isActive ? '#059669' : '#94a3b8' }}>{loc.isActive ? 'Active' : 'Inactive'}</span>
+                    </td>
+                    <td style={{ padding: '0.625rem 0.875rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => editLocId === loc.id ? setEditLocId(null) : startEditLoc(loc)}
+                        style={{ padding: '0.2rem 0.5rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {editLocId === loc.id ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => toggleActive.mutate({ id: loc.id, isActive: !loc.isActive })}
+                        style={{ padding: '0.2rem 0.5rem', background: loc.isActive ? '#fef2f2' : '#f0fdf4', color: loc.isActive ? '#dc2626' : '#059669', border: `1px solid ${loc.isActive ? '#fecaca' : '#bbf7d0'}`, borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {loc.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                  {editLocId === loc.id && (
+                    <tr key={`${loc.id}-edit`} style={{ borderBottom: i < locations.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f8fafc' }}>
+                      <td colSpan={5} style={{ padding: '0.875rem 1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr', gap: '0.5rem', alignItems: 'end' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Name</span>
+                            <input value={editLocForm.name} onChange={(e) => setEditLocForm((p) => ({ ...p, name: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Address</span>
+                            <input value={editLocForm.address} onChange={(e) => setEditLocForm((p) => ({ ...p, address: e.target.value }))} style={inputStyle} />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Latitude</span>
+                            <input value={editLocForm.latitude} onChange={(e) => setEditLocForm((p) => ({ ...p, latitude: e.target.value }))} style={inputStyle} placeholder="19.1136" />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Longitude</span>
+                            <input value={editLocForm.longitude} onChange={(e) => setEditLocForm((p) => ({ ...p, longitude: e.target.value }))} style={inputStyle} placeholder="72.8697" />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Active</span>
+                            <select value={editLocForm.isActive ? 'true' : 'false'} onChange={(e) => setEditLocForm((p) => ({ ...p, isActive: e.target.value === 'true' }))} style={selectStyle}>
+                              <option value="true">Yes</option>
+                              <option value="false">No</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.625rem' }}>
+                          <button
+                            onClick={() => editLocation.mutate({ id: loc.id, data: editLocForm })}
+                            disabled={editLocation.isPending}
+                            style={{ padding: '0.3rem 0.875rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {editLocation.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditLocId(null)}
+                            style={{ padding: '0.3rem 0.875rem', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
               {locations.length === 0 && (
                 <tr><td colSpan={5} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No preset locations</td></tr>

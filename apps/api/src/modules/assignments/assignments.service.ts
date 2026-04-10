@@ -28,6 +28,9 @@ export class AssignmentsService {
       },
     },
     assignedBy: { select: { id: true, name: true } },
+    trip: {
+      select: { id: true, status: true, odometerStart: true, actualStartAt: true },
+    } as const,
   } as const;
 
   async create(dto: CreateAssignmentDto, adminId: string) {
@@ -171,6 +174,58 @@ export class AssignmentsService {
     return this.prisma.assignment.update({
       where: { id },
       data: { decision: 'DECLINED', decisionAt: new Date(), declineReason },
+      include: this.assignmentInclude,
+    });
+  }
+
+  async reassign(id: string, vehicleId: string, driverId: string, adminId: string) {
+    const assignment = await this.prisma.assignment.findUnique({
+      where: { id },
+      include: { booking: true },
+    });
+    if (!assignment) throw new NotFoundException('Assignment not found');
+
+    // Only reassign from ASSIGNED booking
+    if (assignment.booking.status !== 'ASSIGNED') {
+      throw new BadRequestException('Can only reassign ASSIGNED bookings');
+    }
+
+    // Validate new vehicle is AVAILABLE (or same vehicle)
+    if (vehicleId !== assignment.vehicleId) {
+      const newVehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
+      if (!newVehicle || newVehicle.status !== 'AVAILABLE') {
+        throw new BadRequestException('New vehicle is not available');
+      }
+      // Free old vehicle
+      await this.prisma.vehicle.update({
+        where: { id: assignment.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+      // Assign new vehicle
+      await this.prisma.vehicle.update({
+        where: { id: vehicleId },
+        data: { status: 'ASSIGNED' },
+      });
+    }
+
+    // Validate new driver
+    if (driverId !== assignment.driverId) {
+      const newDriver = await this.prisma.driverProfile.findUnique({ where: { id: driverId } });
+      if (!newDriver || !newDriver.shiftReady) {
+        throw new BadRequestException('New driver is not available or not shift-ready');
+      }
+    }
+
+    return this.prisma.assignment.update({
+      where: { id },
+      data: {
+        vehicleId,
+        driverId,
+        assignedById: adminId,
+        decision: 'PENDING',
+        decisionAt: null,
+        declineReason: null,
+      },
       include: this.assignmentInclude,
     });
   }
