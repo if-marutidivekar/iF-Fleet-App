@@ -12,10 +12,10 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: 'EMP-1042' })
+  @ApiPropertyOptional({ example: 'EMP-1042' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  employeeId!: string;
+  employeeId?: string;
 
   @ApiPropertyOptional({ example: '+91-9876543210' })
   @IsOptional()

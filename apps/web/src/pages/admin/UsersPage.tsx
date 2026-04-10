@@ -15,7 +15,6 @@ interface User {
 }
 
 const ROLES = ['EMPLOYEE', 'DRIVER', 'ADMIN'];
-const STATUSES = ['ACTIVE', 'SUSPENDED', 'INACTIVE'];
 
 const statusColor: Record<string, string> = {
   ACTIVE: '#059669',
@@ -65,6 +64,9 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+// RoleBadge is defined but used indirectly — suppress unused warning
+void RoleBadge;
+
 export function UsersPage() {
   const qc = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
@@ -76,6 +78,8 @@ export function UsersPage() {
     phone: '',
   });
   const [addError, setAddError] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', employeeId: '' });
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['admin-users'],
@@ -97,7 +101,7 @@ export function UsersPage() {
   });
 
   const updateUser = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { status?: string; role?: string } }) =>
+    mutationFn: ({ id, data }: { id: string; data: { status?: string; role?: string; name?: string; phone?: string; employeeId?: string } }) =>
       api.patch(`/users/${id}`, data),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
@@ -109,6 +113,30 @@ export function UsersPage() {
 
   const handleRoleChange = (user: User, newRole: string) => {
     updateUser.mutate({ id: user.id, data: { role: newRole } });
+  };
+
+  const startEdit = (user: User) => {
+    setEditId(user.id);
+    setEditForm({ name: user.name, phone: user.phone ?? '', employeeId: user.employeeId ?? '' });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editId) return;
+    const data: { name?: string; phone?: string; employeeId?: string } = {};
+    if (editForm.name) data.name = editForm.name;
+    if (editForm.phone) data.phone = editForm.phone;
+    if (editForm.employeeId) data.employeeId = editForm.employeeId;
+    updateUser.mutate({ id: editId, data });
+    setEditId(null);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    padding: '0.4rem 0.6rem',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: 6,
+    fontSize: 13,
+    width: '100%',
+    boxSizing: 'border-box',
   };
 
   return (
@@ -158,7 +186,7 @@ export function UsersPage() {
             {[
               { label: 'Full Name', key: 'name', type: 'text', placeholder: 'Jane Doe' },
               { label: 'Email', key: 'email', type: 'email', placeholder: 'jane@ideaforgetech.com' },
-              { label: 'Employee ID', key: 'employeeId', type: 'text', placeholder: 'EMP-1042' },
+              { label: 'Employee ID (optional)', key: 'employeeId', type: 'text', placeholder: 'Leave blank to auto-assign' },
               { label: 'Phone', key: 'phone', type: 'text', placeholder: '+91-9876543210' },
             ].map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
@@ -202,7 +230,7 @@ export function UsersPage() {
           )}
           <button
             onClick={() => createUser.mutate(addForm)}
-            disabled={createUser.isPending || !addForm.name || !addForm.email || !addForm.employeeId}
+            disabled={createUser.isPending || !addForm.name || !addForm.email}
             style={{
               marginTop: '1rem',
               padding: '0.5rem 1.25rem',
@@ -237,7 +265,7 @@ export function UsersPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
-                {['Name', 'Email', 'Employee ID', 'Role', 'Status', 'Joined', 'Actions'].map((h) => (
+                {['Name', 'Email', 'Phone', 'Employee ID', 'Role', 'Status', 'Joined', 'Actions'].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -256,73 +284,128 @@ export function UsersPage() {
             </thead>
             <tbody>
               {users.map((user, i) => (
-                <tr
-                  key={user.id}
-                  style={{
-                    borderBottom: i < users.length - 1 ? '1px solid #f1f5f9' : 'none',
-                    transition: 'background 0.1s',
-                  }}
-                >
-                  <td style={{ padding: '0.75rem 1rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
-                    {user.name}
-                    {user.hasDriverProfile && (
-                      <span style={{ marginLeft: 6, fontSize: 10, color: '#059669', fontWeight: 700 }}>
-                        DRV
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#374151' }}>
-                    {user.email}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#64748b', fontFamily: 'monospace' }}>
-                    {user.employeeId}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <select
-                      value={user.role}
-                      onChange={(e) => handleRoleChange(user, e.target.value)}
-                      style={{
-                        padding: '0.2rem 0.4rem',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        background: '#fff',
-                        color: roleColor[user.role] ?? '#374151',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <StatusBadge status={user.status} />
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem', fontSize: 12, color: '#94a3b8' }}>
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <button
-                      onClick={() => handleStatusToggle(user)}
-                      style={{
-                        padding: '0.25rem 0.625rem',
-                        background: user.status === 'ACTIVE' ? '#fef2f2' : '#f0fdf4',
-                        color: user.status === 'ACTIVE' ? '#dc2626' : '#059669',
-                        border: `1px solid ${user.status === 'ACTIVE' ? '#fecaca' : '#bbf7d0'}`,
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {user.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr
+                    key={user.id}
+                    style={{
+                      borderBottom: editId === user.id ? 'none' : i < users.length - 1 ? '1px solid #f1f5f9' : 'none',
+                      transition: 'background 0.1s',
+                    }}
+                  >
+                    <td style={{ padding: '0.75rem 1rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                      {user.name}
+                      {user.hasDriverProfile && (
+                        <span style={{ marginLeft: 6, fontSize: 10, color: '#059669', fontWeight: 700 }}>
+                          DRV
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#374151' }}>
+                      {user.email}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#64748b' }}>
+                      {user.phone ?? '—'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#64748b', fontFamily: 'monospace' }}>
+                      {user.employeeId ?? '—'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <select
+                        value={user.role}
+                        onChange={(e) => handleRoleChange(user, e.target.value)}
+                        style={{
+                          padding: '0.2rem 0.4rem',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          background: '#fff',
+                          color: roleColor[user.role] ?? '#374151',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <StatusBadge status={user.status} />
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: 12, color: '#94a3b8' }}>
+                      {new Date(user.createdAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => editId === user.id ? setEditId(null) : startEdit(user)}
+                        style={{
+                          padding: '0.25rem 0.625rem',
+                          background: '#eff6ff',
+                          color: '#2563eb',
+                          border: '1px solid #bfdbfe',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {editId === user.id ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => handleStatusToggle(user)}
+                        style={{
+                          padding: '0.25rem 0.625rem',
+                          background: user.status === 'ACTIVE' ? '#fef2f2' : '#f0fdf4',
+                          color: user.status === 'ACTIVE' ? '#dc2626' : '#059669',
+                          border: `1px solid ${user.status === 'ACTIVE' ? '#fecaca' : '#bbf7d0'}`,
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {user.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                  {editId === user.id && (
+                    <tr key={`${user.id}-edit`} style={{ borderBottom: i < users.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f8fafc' }}>
+                      <td colSpan={8} style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <label style={{ fontSize: 13 }}>
+                            <span style={{ fontWeight: 600, color: '#374151', display: 'block', marginBottom: 2 }}>Name</span>
+                            <input type="text" value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13, width: 160 }} />
+                          </label>
+                          <label style={{ fontSize: 13 }}>
+                            <span style={{ fontWeight: 600, color: '#374151', display: 'block', marginBottom: 2 }}>Phone</span>
+                            <input type="text" value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} placeholder="+91-..." style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13, width: 150 }} />
+                          </label>
+                          <label style={{ fontSize: 13 }}>
+                            <span style={{ fontWeight: 600, color: '#374151', display: 'block', marginBottom: 2 }}>Employee ID</span>
+                            <input type="text" value={editForm.employeeId} onChange={(e) => setEditForm((p) => ({ ...p, employeeId: e.target.value }))} placeholder="EMP-001" style={{ padding: '6px 10px', border: '1.5px solid #e2e8f0', borderRadius: 6, fontSize: 13, width: 120 }} />
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignSelf: 'flex-end', paddingBottom: 2, marginTop: '0.625rem' }}>
+                          <button
+                            onClick={handleSaveEdit}
+                            disabled={updateUser.isPending}
+                            style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                          >
+                            {updateUser.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditId(null)}
+                            style={{ background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                  <td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                     No users found
                   </td>
                 </tr>

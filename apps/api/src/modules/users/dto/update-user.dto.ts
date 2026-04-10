@@ -28,4 +28,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
+
+  @ApiPropertyOptional({ example: 'EMP-1042' })
+  @IsOptional()
+  @IsString()
+  employeeId?: string;
 }

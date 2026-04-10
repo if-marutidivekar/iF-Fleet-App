@@ -89,7 +89,7 @@ export class TripsService {
     return trip;
   }
 
-  async completeTrip(id: string, dto: CompleteTripDto, userId: string) {
+  async completeTrip(id: string, dto: CompleteTripDto, userId: string, userRole?: string) {
     const trip = await this.prisma.trip.findUnique({
       where: { id },
       include: { assignment: { include: { driver: true, vehicle: true } } },
@@ -97,9 +97,11 @@ export class TripsService {
 
     if (!trip) throw new NotFoundException('Trip not found');
 
-    const driverProfile = await this.prisma.driverProfile.findFirst({ where: { userId } });
-    if (!driverProfile || trip.assignment.driverId !== driverProfile.id) {
-      throw new ForbiddenException('Only the assigned driver can complete the trip');
+    if (userRole !== 'ADMIN') {
+      const driverProfile = await this.prisma.driverProfile.findFirst({ where: { userId } });
+      if (!driverProfile || trip.assignment.driverId !== driverProfile.id) {
+        throw new ForbiddenException('Only the assigned driver or admin can complete the trip');
+      }
     }
 
     if (trip.status !== 'STARTED' && trip.status !== 'IN_PROGRESS') {
@@ -110,7 +112,7 @@ export class TripsService {
       where: { id },
       data: {
         status: 'COMPLETED',
-        odometerEnd: dto.odometerEnd,
+        odometerEnd: dto.odometerEnd ?? null,
         remarks: dto.remarks ?? null,
         actualEndAt: new Date(),
       },

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth.store';
 import { UserRole } from '@if-fleet/domain';
@@ -26,7 +27,8 @@ const EMPLOYEE_NAV: NavItem[] = [
 ];
 
 const DRIVER_NAV: NavItem[] = [
-  { label: 'My Assignments', path: '/driver', icon: '🚗' },
+  { label: 'Dashboard', path: '/driver', icon: '🏠' },
+  { label: 'My Assignments', path: '/driver/assignments', icon: '📋' },
 ];
 
 function getRoleColor(role: UserRole): string {
@@ -45,18 +47,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, clearAuth } = useAuthStore();
-
-  if (!user) return <>{children}</>;
-
-  const navItems =
-    user.role === UserRole.ADMIN
-      ? ADMIN_NAV
-      : user.role === UserRole.DRIVER
-      ? DRIVER_NAV
-      : EMPLOYEE_NAV;
-
-  const roleColor = getRoleColor(user.role);
-  const roleLabel = getRoleLabel(user.role);
+  const lastActivity = useRef<number>(Date.now());
 
   const handleLogout = () => {
     const rt = localStorage.getItem('if-fleet-rt');
@@ -72,6 +63,41 @@ export function Layout({ children }: { children: React.ReactNode }) {
     clearAuth();
     navigate('/login');
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const resetTimer = () => {
+      lastActivity.current = Date.now();
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll'] as const;
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
+
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivity.current > 30 * 60 * 1000) {
+        handleLogout();
+      }
+    }, 60_000);
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  if (!user) return <>{children}</>;
+
+  const navItems =
+    user.role === UserRole.ADMIN
+      ? ADMIN_NAV
+      : user.role === UserRole.DRIVER
+      ? DRIVER_NAV
+      : EMPLOYEE_NAV;
+
+  const roleColor = getRoleColor(user.role);
+  const roleLabel = getRoleLabel(user.role);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>

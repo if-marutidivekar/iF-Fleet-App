@@ -2,10 +2,12 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Param,
   Body,
   UseGuards,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty } from 'class-validator';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AssignmentsService } from './assignments.service';
@@ -20,6 +22,16 @@ interface JwtUser {
   sub: string;
   email: string;
   role: UserRole;
+}
+
+class ReassignAssignmentDto {
+  @IsString()
+  @IsNotEmpty()
+  vehicleId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  driverId!: string;
 }
 
 @ApiTags('Assignments')
@@ -64,5 +76,16 @@ export class AssignmentsController {
     @CurrentUser() user: JwtUser,
   ) {
     return this.assignmentsService.decline(id, user.sub, dto.declineReason);
+  }
+
+  @Patch(':id/reassign')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Admin reassigns vehicle/driver for an assignment' })
+  reassign(
+    @Param('id') id: string,
+    @Body() dto: ReassignAssignmentDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.assignmentsService.reassign(id, dto.vehicleId, dto.driverId, user.sub);
   }
 }
