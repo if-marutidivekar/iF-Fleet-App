@@ -4,9 +4,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>iF Fleet Management</title>
+    <style>
+      #boot-msg {
+        position: fixed; inset: 0; display: flex; align-items: center;
+        justify-content: center; flex-direction: column; gap: 12px;
+        font-family: system-ui, sans-serif; background: #f8fafc;
+        color: #64748b; font-size: 15px; z-index: 9999;
+      }
+      #boot-msg.hidden { display: none; }
+      #boot-err {
+        display: none; position: fixed; inset: 0; padding: 2rem;
+        background: #fef2f2; font-family: monospace; font-size: 13px;
+        color: #991b1b; white-space: pre-wrap; overflow: auto; z-index: 9999;
+      }
+    </style>
   </head>
   <body>
+    <!-- Shown until React mounts; catches JS-load failures -->
+    <div id="boot-msg">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="18" stroke="#1d4ed8" stroke-width="3" stroke-dasharray="56" stroke-dashoffset="14">
+          <animateTransform attributeName="transform" type="rotate" from="0 20 20" to="360 20 20" dur="1s" repeatCount="indefinite"/>
+        </circle>
+      </svg>
+      <span>Loading iF Fleet…</span>
+    </div>
+    <!-- Shown if a JS error occurs before React mounts -->
+    <div id="boot-err"></div>
+
     <div id="root"></div>
+
+    <script>
+      // Catch any synchronous JS error during module loading
+      window.addEventListener('error', function(e) {
+        document.getElementById('boot-msg').classList.add('hidden');
+        var box = document.getElementById('boot-err');
+        box.style.display = 'block';
+        box.textContent = 'JS Load Error\n\n' + e.message + '\n\nFile: ' + e.filename + ':' + e.lineno + '\n\n' + (e.error && e.error.stack ? e.error.stack : '');
+      });
+      // Catch unhandled Promise rejections (async module loading failures)
+      window.addEventListener('unhandledrejection', function(e) {
+        document.getElementById('boot-msg').classList.add('hidden');
+        var box = document.getElementById('boot-err');
+        box.style.display = 'block';
+        box.textContent += '\nUnhandled Promise Rejection\n\n' + (e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
