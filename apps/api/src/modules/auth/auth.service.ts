@@ -51,7 +51,6 @@ export class AuthService {
 
   async verifyOtp(
     email: string,
-    employeeId: string,
     otp: string,
   ): Promise<{ accessToken: string; refreshToken: string; user: object }> {
     const record = await this.prisma.otpRecord.findFirst({
@@ -76,13 +75,31 @@ export class AuthService {
       throw new UnauthorizedException('Invalid OTP');
     }
 
-    // Validate employee ID
-    const user = await this.prisma.user.findFirst({
-      where: { email, employeeId, status: 'ACTIVE' },
+    // Look up user by email only
+    let user = await this.prisma.user.findUnique({
+      where: { email },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Employee ID does not match or account is inactive');
+      // Auto-create user from company email
+      const localPart = email.split('@')[0] ?? email;
+      const autoName = localPart
+        .split('.')
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(' ');
+      const autoEmpId = `EMP-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          name: autoName,
+          employeeId: autoEmpId,
+          role: 'EMPLOYEE',
+          status: 'ACTIVE',
+        },
+      });
+    } else if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is inactive or suspended');
     }
 
     await this.prisma.otpRecord.update({ where: { id: record.id }, data: { used: true } });
