@@ -1,16 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      // ESM-safe resolution: avoids __dirname which is unavailable in native ESM
-      '@if-fleet/domain': fileURLToPath(
-        new URL('../../packages/domain/src/index.ts', import.meta.url),
-      ),
-    },
+  // No alias for @if-fleet/domain — let pnpm workspace symlink resolution
+  // handle it. Vite's esbuild pre-bundler converts the CJS dist/index.js to
+  // ESM correctly, which Rollup can then statically analyse for named exports.
+  optimizeDeps: {
+    include: ['@if-fleet/domain'],
   },
   server: {
     port: 3000,

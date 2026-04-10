@@ -8,7 +8,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "paths": {
-      "@if-fleet/domain": ["../../packages/domain/src/index.ts"]
+      "@if-fleet/domain": ["../../packages/domain/dist/esm/index.d.ts"]
     }
   },
   "include": ["src/**/*"],
