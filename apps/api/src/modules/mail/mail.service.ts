@@ -65,28 +65,41 @@ export class MailService {
       port: smtp.port,
       secure: smtp.secure,
       auth: { user: smtp.user, pass: smtp.password },
+      // Hard timeout so a blocked port fails fast (5 s) instead of hanging
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 5_000,
     });
 
-    await transporter.sendMail({
-      from: smtp.from,
-      to,
-      subject: 'iF Fleet — Your One-Time Password',
-      text: `Your OTP is: ${otp}\n\nThis code expires in 10 minutes.\nDo not share this code with anyone.`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:2rem">
-          <h2 style="color:#1d4ed8;margin-bottom:0.5rem">iF Fleet</h2>
-          <p style="color:#64748b;margin-top:0">Company fleet management</p>
-          <hr style="border:none;border-top:1px solid #e2e8f0;margin:1.5rem 0"/>
-          <p style="font-size:15px;color:#0f172a">Your one-time password is:</p>
-          <div style="background:#f1f5f9;border-radius:8px;padding:1.5rem;text-align:center;margin:1rem 0">
-            <span style="font-size:2.5rem;font-weight:800;letter-spacing:0.5rem;color:#1d4ed8">${otp}</span>
+    try {
+      await transporter.sendMail({
+        from: smtp.from,
+        to,
+        subject: 'iF Fleet — Your One-Time Password',
+        text: `Your OTP is: ${otp}\n\nThis code expires in 10 minutes.\nDo not share this code with anyone.`,
+        html: `
+          <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:2rem">
+            <h2 style="color:#1d4ed8;margin-bottom:0.5rem">iF Fleet</h2>
+            <p style="color:#64748b;margin-top:0">Company fleet management</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:1.5rem 0"/>
+            <p style="font-size:15px;color:#0f172a">Your one-time password is:</p>
+            <div style="background:#f1f5f9;border-radius:8px;padding:1.5rem;text-align:center;margin:1rem 0">
+              <span style="font-size:2.5rem;font-weight:800;letter-spacing:0.5rem;color:#1d4ed8">${otp}</span>
+            </div>
+            <p style="font-size:13px;color:#64748b">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
           </div>
-          <p style="font-size:13px;color:#64748b">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
-        </div>
-      `,
-    });
-
-    this.logger.log(`OTP email sent to ${to}`);
+        `,
+      });
+      this.logger.log(`OTP email sent to ${to}`);
+    } catch (err) {
+      // SMTP unreachable (e.g. corporate firewall blocks port 465/587).
+      // Log OTP to terminal so dev/testing can proceed without email.
+      this.logger.error(`SMTP send failed: ${(err as Error).message}`);
+      this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      this.logger.warn(`  SMTP UNREACHABLE — OTP for ${to}: ${otp}`);
+      this.logger.warn('  Fix SMTP settings in Admin → Settings, or use this OTP directly.');
+      this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
   }
 
   /** Test SMTP connection — used by admin settings verify button */
