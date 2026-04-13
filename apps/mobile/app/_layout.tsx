@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
-import { useAuthStore } from '../stores/auth.store';
 import { registerForPushNotifications } from '../lib/notifications';
 
 const queryClient = new QueryClient({
@@ -20,23 +19,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function AuthGuard() {
-  const segments = useSegments();
-  const router = useRouter();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
-
-  useEffect(() => {
-    const inAuthGroup = segments[0] === '(auth)';
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/');
-    }
-  }, [isAuthenticated, segments]);
-
-  return null;
-}
-
 export default function RootLayout() {
   useEffect(() => {
     // Non-critical — Expo Go doesn't support remote push in SDK 53+
@@ -45,11 +27,14 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthGuard />
-      {/* expo-router 6.x auto-discovers all file-system routes.
-          Do NOT declare Stack.Screen for group folders ("(auth)") —
-          use the full leaf path ("(auth)/login") or let the router
-          handle them automatically via screenOptions. */}
+      {/*
+        Auth routing is handled declaratively:
+        - app/index.tsx uses <Redirect> to send unauthenticated users to /(auth)/login
+          and authenticated users to their role-based route.
+        - Individual screens call router.replace('/(auth)/login') on logout / 401.
+        - Do NOT use router.replace() in a useEffect here: it fires before expo-router's
+          navigator finishes mounting, causing "navigate before Root Layout" crash.
+      */}
       <Stack screenOptions={{ headerShown: false }} />
     </QueryClientProvider>
   );
