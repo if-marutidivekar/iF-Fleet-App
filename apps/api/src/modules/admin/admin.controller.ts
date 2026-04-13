@@ -4,6 +4,7 @@ import {
   Put,
   Post,
   Body,
+  Param,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -17,11 +18,17 @@ import {
   IsEnum,
   Min,
   Max,
+  Length,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminService } from './admin.service';
 import { SmtpConfig } from '../mail/mail.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from '@if-fleet/domain';
 
 class SmtpConfigDto implements SmtpConfig {
   @IsString() @IsNotEmpty() host!: string;
@@ -44,8 +51,18 @@ class SessionTimeoutDto {
   @Type(() => Number) @IsNumber() @Min(1) @Max(480) minutes!: number;
 }
 
-/** All admin endpoints — JWT required; role enforcement is done in AdminService */
-@UseGuards(AuthGuard('jwt'))
+class ResetPinDto {
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'PIN must be exactly 6 digits' })
+  newPin!: string;
+}
+
+interface JwtUser { sub: string; role: UserRole; }
+
+/** All admin endpoints — JWT + ADMIN role required */
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(UserRole.ADMIN)
 @Controller({ path: 'admin', version: '1' })
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
@@ -83,5 +100,17 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   saveSessionTimeout(@Body() dto: SessionTimeoutDto) {
     return this.adminService.saveSessionTimeout(dto.minutes);
+  }
+
+  // ─── Driver PIN management ─────────────────────────────────────────────────
+
+  @Post('drivers/:id/reset-pin')
+  @HttpCode(HttpStatus.OK)
+  resetDriverPin(
+    @Param('id') driverId: string,
+    @Body() dto: ResetPinDto,
+    @CurrentUser() actor: JwtUser,
+  ) {
+    return this.adminService.resetDriverPin(driverId, dto.newPin, actor.sub);
   }
 }

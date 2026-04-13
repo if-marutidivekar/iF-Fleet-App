@@ -99,6 +99,11 @@ enum NotificationDeliveryState {
   READ
 }
 
+enum DriverAuthMethod {
+  EMAIL_OTP
+  MOBILE_PIN
+}
+
 enum AuditAction {
   BOOKING_CREATED
   BOOKING_APPROVED
@@ -117,6 +122,9 @@ enum AuditAction {
   DRIVER_CREATED
   DRIVER_UPDATED
   DRIVER_DEACTIVATED
+  DRIVER_AUTH_METHOD_CHANGED
+  DRIVER_PIN_SET
+  DRIVER_PIN_RESET
   USER_LOGIN
   USER_SUSPENDED
 }
@@ -135,6 +143,13 @@ model User {
   updatedAt  DateTime   @updatedAt
   deletedAt  DateTime?  // soft-delete
 
+  // Driver authentication — admin-controlled, drivers cannot change their own method
+  authMethod     DriverAuthMethod @default(EMAIL_OTP)
+  mobileNumber   String?          @unique // required when authMethod = MOBILE_PIN
+  pinHash        String?          // bcrypt hash — used for PIN auth
+  pinHmac        String?          // HMAC-SHA256 — used for uniqueness check only
+  pinMustChange  Boolean          @default(false) // forced PIN change after admin set/reset
+
   driverProfile  DriverProfile?
   bookings       Booking[]       @relation("RequesterBookings")
   approvedBookings Booking[]     @relation("ApproverBookings")
@@ -143,6 +158,7 @@ model User {
   auditLogs      AuditLog[]      @relation("ActorAuditLogs")
   fuelLogs       FuelLog[]
 
+  @@index([mobileNumber])
   @@map("users")
 }
 

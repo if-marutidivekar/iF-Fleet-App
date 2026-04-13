@@ -46,14 +46,14 @@ export class UsersController {
   @Post()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Create user (admin only)' })
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() actor: JwtUser) {
+    return this.usersService.create(dto, actor.sub);
   }
 
   @Patch(':id')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Update user name/phone/status/role (admin only)' })
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  @ApiOperation({ summary: 'Update user (admin only)' })
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() actor: JwtUser) {
+    return this.usersService.update(id, dto, actor.sub);
   }
 }

@@ -1,6 +1,8 @@
-import { IsEmail, IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import {
+  IsEmail, IsString, IsNotEmpty, IsOptional, IsEnum, Matches, Length,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@if-fleet/domain';
+import { UserRole, DriverAuthMethod } from '@if-fleet/domain';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Jane Doe' })
@@ -26,4 +28,34 @@ export class CreateUserDto {
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
+
+  // ─── Driver-specific fields ───────────────────────────────────────────────
+
+  @ApiPropertyOptional({
+    enum: DriverAuthMethod,
+    default: DriverAuthMethod.EMAIL_OTP,
+    description: 'Admin-controlled driver authentication method. Ignored for non-driver roles.',
+  })
+  @IsOptional()
+  @IsEnum(DriverAuthMethod)
+  authMethod?: DriverAuthMethod;
+
+  @ApiPropertyOptional({
+    example: '+919876543210',
+    description: 'Required when authMethod = MOBILE_PIN',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?[1-9]\d{7,14}$/, { message: 'Invalid mobile number format' })
+  mobileNumber?: string;
+
+  @ApiPropertyOptional({
+    example: '847291',
+    description: 'Initial 6-digit PIN — required when authMethod = MOBILE_PIN. Driver must change at first login.',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'PIN must be exactly 6 digits' })
+  initialPin?: string;
 }
