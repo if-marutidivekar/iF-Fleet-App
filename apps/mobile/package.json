@@ -17,9 +17,6 @@
     "@expo/metro-runtime": "~6.1.2",
     "@if-fleet/domain": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-navigation/bottom-tabs": "^7.15.9",
-    "@react-navigation/native": "^7.2.2",
-    "@react-navigation/native-stack": "^7.14.10",
     "@tanstack/react-query": "^5.0.0",
     "axios": "^1.7.0",
     "expo": "~54.0.0",
@@ -33,6 +30,8 @@
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-maps": "1.20.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.16.0",
     "socket.io-client": "^4.7.0",
     "zustand": "^4.5.0"
   },

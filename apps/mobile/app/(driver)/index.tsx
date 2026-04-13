@@ -22,7 +22,7 @@ export default function DriverDashboard() {
 
   const { data: assignments, isLoading } = useQuery({
     queryKey: ['driver-assignments'],
-    queryFn: () => api.get<Assignment[]>('/assignments/mine').then((r) => r.data),
+    queryFn: () => api.get<Assignment[]>('/assignments').then((r) => r.data),
     refetchInterval: 30_000, // poll every 30s in case push is missed
   });
 
