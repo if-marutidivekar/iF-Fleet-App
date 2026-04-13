@@ -181,7 +181,7 @@ export class UsersService {
         ...(dto.employeeId !== undefined && { employeeId: dto.employeeId }),
         ...(dto.mobileNumber !== undefined && { mobileNumber: dto.mobileNumber }),
         ...(dto.authMethod !== undefined && { authMethod: dto.authMethod as any }),
-        ...(pinHash !== undefined && { pinHash, pinHmac, pinMustChange: true }),
+        ...(pinHash !== undefined && { pinHash, pinHmac: pinHmac ?? null, pinMustChange: true }),
       },
       include: { driverProfile: { select: { id: true } } },
     });
