@@ -39,19 +39,18 @@ function AuthGuard() {
 
 export default function RootLayout() {
   useEffect(() => {
-    registerForPushNotifications();
+    // Non-critical — Expo Go doesn't support remote push in SDK 53+
+    registerForPushNotifications().catch(() => {});
   }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <AuthGuard />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(driver)" options={{ headerShown: false }} />
-        <Stack.Screen name="(admin)" options={{ headerShown: false }} />
-        <Stack.Screen name="(employee)" options={{ headerShown: false }} />
-      </Stack>
+      {/* expo-router 6.x auto-discovers all file-system routes.
+          Do NOT declare Stack.Screen for group folders ("(auth)") —
+          use the full leaf path ("(auth)/login") or let the router
+          handle them automatically via screenOptions. */}
+      <Stack screenOptions={{ headerShown: false }} />
     </QueryClientProvider>
   );
 }
