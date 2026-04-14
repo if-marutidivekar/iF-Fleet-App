@@ -14,9 +14,13 @@ export default function DriverLayout() {
       }}
     >
       <Tabs.Screen name="index"   options={{ title: 'Home',    tabBarIcon: ({ color }) => <TabIcon emoji="🏠" color={color} /> }} />
-      <Tabs.Screen name="trip"    options={{ title: 'My Trip', tabBarIcon: ({ color }) => <TabIcon emoji="🚗" color={color} /> }} />
+      <Tabs.Screen name="fleet"   options={{ title: 'Fleet',   tabBarIcon: ({ color }) => <TabIcon emoji="🚙" color={color} /> }} />
+      <Tabs.Screen name="track"   options={{ title: 'Track',   tabBarIcon: ({ color }) => <TabIcon emoji="🗺️" color={color} /> }} />
       <Tabs.Screen name="history" options={{ title: 'History', tabBarIcon: ({ color }) => <TabIcon emoji="📜" color={color} /> }} />
+      <Tabs.Screen name="alerts"  options={{ title: 'Alerts',  tabBarIcon: ({ color }) => <TabIcon emoji="🔔" color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color }) => <TabIcon emoji="👤" color={color} /> }} />
+      {/* Hide old trip filename from tab bar */}
+      <Tabs.Screen name="trip" options={{ href: null }} />
     </Tabs>
   );
 }

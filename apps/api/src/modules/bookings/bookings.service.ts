@@ -21,8 +21,18 @@ export class BookingsService {
       include: {
         vehicle: { select: { id: true, vehicleNo: true, type: true, make: true, model: true } },
         driver: {
-          include: {
+          select: {
+            id: true,
+            currentLocationText: true,
+            currentLocationPreset: { select: { id: true, name: true } },
             user: { select: { id: true, name: true, phone: true } },
+          },
+        },
+        trip: {
+          select: {
+            id: true, status: true,
+            odometerStart: true, odometerEnd: true,
+            actualStartAt: true, actualEndAt: true,
           },
         },
       },
@@ -74,6 +84,7 @@ export class BookingsService {
         dropoffLabel: dropoffLabel ?? null,
         requestedAt: new Date(dto.requestedAt),
         status: initialStatus,
+        preferredVehicleId: dto.preferredVehicleId ?? null,
       },
       include: this.bookingInclude,
     });

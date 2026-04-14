@@ -15,6 +15,7 @@ export default function EmployeeLayout() {
     >
       <Tabs.Screen name="index"       options={{ title: 'Home',    tabBarIcon: ({ color }) => <TabIcon emoji="🏠" color={color} /> }} />
       <Tabs.Screen name="new-booking" options={{ title: 'Book',    tabBarIcon: ({ color }) => <TabIcon emoji="➕" color={color} /> }} />
+      <Tabs.Screen name="track"       options={{ title: 'Track',   tabBarIcon: ({ color }) => <TabIcon emoji="🗺️" color={color} /> }} />
       <Tabs.Screen name="history"     options={{ title: 'History', tabBarIcon: ({ color }) => <TabIcon emoji="📜" color={color} /> }} />
       <Tabs.Screen name="profile"     options={{ title: 'Profile', tabBarIcon: ({ color }) => <TabIcon emoji="👤" color={color} /> }} />
     </Tabs>

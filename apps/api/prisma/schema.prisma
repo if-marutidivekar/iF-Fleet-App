@@ -173,7 +173,14 @@ model DriverProfile {
   updatedAt     DateTime @updatedAt
   deletedAt     DateTime? // soft-delete preserves referential history
 
-  assignments Assignment[]
+  // Phase 1 manual location — set by driver themselves
+  currentLocationText     String?         // free-text address
+  currentLocationPresetId String?         // FK → PresetLocation.id (optional)
+  currentLocationPreset   PresetLocation? @relation("DriverCurrentLocation", fields: [currentLocationPresetId], references: [id])
+  locationUpdatedAt       DateTime?
+
+  assignments  Assignment[]
+  assignedVehicle Vehicle?   @relation("FleetDriverVehicle") // back-relation (vehicle assigned to this driver)
 
   @@map("driver_profiles")
 }
@@ -193,8 +200,14 @@ model Vehicle {
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime?        // soft-delete
 
-  assignments Assignment[]
-  fuelLogs    FuelLog[]
+  // Fleet-level persistent driver assignment (independent of booking assignments)
+  currentDriverId          String?        @unique // FK → DriverProfile.id; @unique enforces one-vehicle-per-driver
+  currentDriver            DriverProfile? @relation("FleetDriverVehicle", fields: [currentDriverId], references: [id])
+  currentDriverAssignedAt  DateTime?
+
+  assignments       Assignment[]
+  fuelLogs          FuelLog[]
+  preferredInBookings Booking[] @relation("PreferredVehicleBookings") // back-relation
 
   @@map("vehicles")
 }
@@ -210,8 +223,9 @@ model PresetLocation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  pickupBookings  Booking[] @relation("PickupPreset")
-  dropoffBookings Booking[] @relation("DropoffPreset")
+  pickupBookings  Booking[]       @relation("PickupPreset")
+  dropoffBookings Booking[]       @relation("DropoffPreset")
+  driverLocations DriverProfile[] @relation("DriverCurrentLocation") // back-relation
 
   @@map("preset_locations")
 }
@@ -248,6 +262,10 @@ model Booking {
   rejectionReason String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  // Employee's optional vehicle preference from Available Vehicles screen
+  preferredVehicleId String?
+  preferredVehicle   Vehicle? @relation("PreferredVehicleBookings", fields: [preferredVehicleId], references: [id])
 
   assignment Assignment?
 
