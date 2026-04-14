@@ -5,7 +5,12 @@ const BASE_URL = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/ap
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    // ngrok free tier shows an interstitial warning page for non-browser clients.
+    // This header bypasses it so API calls reach the actual server.
+    'ngrok-skip-browser-warning': 'true',
+  },
   timeout: 10_000,
 });
 
