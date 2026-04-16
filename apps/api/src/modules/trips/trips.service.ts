@@ -92,7 +92,21 @@ export class TripsService {
   async completeTrip(id: string, dto: CompleteTripDto, userId: string, userRole?: string) {
     const trip = await this.prisma.trip.findUnique({
       where: { id },
-      include: { assignment: { include: { driver: true, vehicle: true } } },
+      include: {
+        assignment: {
+          include: {
+            driver: true,
+            vehicle: true,                  // needed for currentDriverId check
+            booking: {                      // Step 19: need dropoff location
+              select: {
+                dropoffPresetId: true,
+                dropoffCustomAddress: true,
+                dropoffLabel: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!trip) throw new NotFoundException('Trip not found');
@@ -119,16 +133,44 @@ export class TripsService {
       include: this.tripInclude,
     });
 
-    // Update vehicle back to AVAILABLE and booking to COMPLETED
+    // Step 19: Resolve the dropoff location from the completed booking.
+    // dropoffLabel is the canonical display name (preset name or custom address label).
+    const { booking } = trip.assignment;
+    const dropoffLocationText = booking.dropoffLabel ?? booking.dropoffCustomAddress ?? null;
+    const dropoffPresetId = booking.dropoffPresetId ?? null;
+
+    // Vehicle returns to ASSIGNED if a fleet driver still owns it; otherwise AVAILABLE.
+    // This preserves the fleet-level driver↔vehicle pairing across trips.
+    const postTripVehicleStatus = trip.assignment.vehicle.currentDriverId
+      ? 'ASSIGNED'
+      : 'AVAILABLE';
+
     await Promise.all([
+      // Restore vehicle to correct post-trip status
       this.prisma.vehicle.update({
         where: { id: trip.assignment.vehicleId },
-        data: { status: 'AVAILABLE' },
+        data: { status: postTripVehicleStatus },
       }),
+      // Mark booking completed
       this.prisma.booking.update({
         where: { id: trip.bookingId },
         data: { status: 'COMPLETED' },
       }),
+      // Step 19: Persist driver's new location = trip dropoff point.
+      // This is the authoritative location source after a trip ends.
+      // It feeds Fleet Master Current Location, Driver Fleet tab, and the
+      // Available Vehicles query for future employee bookings.
+      // The driver can override this by manually setting their location later.
+      dropoffLocationText
+        ? this.prisma.driverProfile.update({
+            where: { id: trip.assignment.driverId },
+            data: {
+              currentLocationText: dropoffLocationText,
+              currentLocationPresetId: dropoffPresetId,
+              locationUpdatedAt: new Date(),
+            },
+          })
+        : Promise.resolve(),
     ]);
 
     return completedTrip;

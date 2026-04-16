@@ -8,6 +8,13 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Disable Express ETag generation.
+  // ETags cause clients to receive 304 Not Modified for live-data endpoints
+  // (trips, assignments, notifications) even when the underlying data has changed.
+  // React Query manages its own stale/refetch lifecycle, so server-side ETags add
+  // no benefit and only risk serving stale responses.
+  app.getHttpAdapter().getInstance().disable('etag');
+
   // Security headers
   app.use(helmet());
 
