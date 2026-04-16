@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 
 interface Booking {
   id: string;
+  bookingNo: number;
   transportType: string;
   passengerCount?: number;
   materialDescription?: string;
@@ -182,6 +183,11 @@ function BookingRow({
           verticalAlign: 'top',
         }}
       >
+        {/* Booking No */}
+        <td style={{ padding: '14px 16px', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>
+          #{booking.bookingNo}
+        </td>
+
         {/* Requester */}
         <td style={{ padding: '14px 16px', fontSize: 13 }}>
           <div style={{ fontWeight: 600, color: '#0f172a' }}>{booking.requester.name}</div>
@@ -722,10 +728,11 @@ export function BookingQueuePage() {
             No bookings found for this filter.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 {[
+                  'Req #',
                   'Requester',
                   'Transport',
                   'Pickup → Dropoff',

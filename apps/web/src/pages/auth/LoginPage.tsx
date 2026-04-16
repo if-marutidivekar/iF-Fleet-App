@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import { useAuthStore } from '../../stores/auth.store';
+import { useAuthStore, type AuthUser } from '../../stores/auth.store';
 import type { UserRole } from '@if-fleet/domain';
 import styles from './LoginPage.module.css';
 
@@ -10,10 +10,23 @@ type Tab = 'otp' | 'pin';
 type OtpStep = 'email' | 'otp';
 type PinStep = 'mobile' | 'pin';
 
+interface LoginUser {
+  id: string;
+  userCode?: number;
+  name: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email: string;
+  department?: string | null;
+  mobileNumber?: string | null;
+  role: UserRole;
+  profileCompleted: boolean;
+}
+
 // ─── Email OTP flow ───────────────────────────────────────────────────────────
 
 function OtpFlow({ onSuccess }: {
-  onSuccess: (user: { id: string; name: string; email: string; role: UserRole }, token: string, rt: string) => void;
+  onSuccess: (user: LoginUser, token: string, rt: string) => void;
 }) {
   const [step, setStep] = useState<OtpStep>('email');
   const [email, setEmail] = useState('');
@@ -31,12 +44,14 @@ function OtpFlow({ onSuccess }: {
 
   const verifyOtp = useMutation({
     mutationFn: ({ email: addr, otp: code }: { email: string; otp: string }) =>
-      api.post<{
-        accessToken: string; refreshToken: string;
-        user: { id: string; name: string; email: string; role: UserRole };
-      }>('/auth/verify-otp', { email: addr, otp: code }),
+      api.post<{ accessToken: string; refreshToken: string; user: LoginUser }>(
+        '/auth/verify-otp', { email: addr, otp: code },
+      ),
     onSuccess: ({ data }) => onSuccess(data.user, data.accessToken, data.refreshToken),
-    onError: () => setError('Invalid or expired OTP. Please try again.'),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(typeof msg === 'string' ? msg : 'Invalid or expired OTP. Please try again.');
+    },
   });
 
   if (step === 'email') {
@@ -79,12 +94,7 @@ function OtpFlow({ onSuccess }: {
 // ─── Driver PIN flow ──────────────────────────────────────────────────────────
 
 function PinFlow({ onSuccess }: {
-  onSuccess: (
-    user: { id: string; name: string; email: string; role: UserRole },
-    token: string,
-    rt: string,
-    pinMustChange: boolean,
-  ) => void;
+  onSuccess: (user: LoginUser, token: string, rt: string, pinMustChange: boolean) => void;
 }) {
   const [step, setStep] = useState<PinStep>('mobile');
   const [mobile, setMobile] = useState('');
@@ -103,10 +113,9 @@ function PinFlow({ onSuccess }: {
 
   const verifyPin = useMutation({
     mutationFn: ({ mobileNumber, pin: p }: { mobileNumber: string; pin: string }) =>
-      api.post<{
-        accessToken: string; refreshToken: string; pinMustChange: boolean;
-        user: { id: string; name: string; email: string; role: UserRole };
-      }>('/auth/driver/verify-pin', { mobileNumber, pin: p }),
+      api.post<{ accessToken: string; refreshToken: string; pinMustChange: boolean; user: LoginUser }>(
+        '/auth/driver/verify-pin', { mobileNumber, pin: p },
+      ),
     onSuccess: ({ data }) =>
       onSuccess(data.user, data.accessToken, data.refreshToken, data.pinMustChange),
     onError: (e: unknown) => {
@@ -235,38 +244,53 @@ export function LoginPage() {
 
   const [tab, setTab] = useState<Tab>('otp');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [pendingUser, setPendingUser] = useState<{ id: string; name: string; email: string; role: UserRole } | null>(null);
+  const [pendingUser, setPendingUser] = useState<LoginUser | null>(null);
 
-  const handleOtpSuccess = (
-    user: { id: string; name: string; email: string; role: UserRole },
-    token: string,
-    rt: string,
-  ) => {
-    setAuth(user, token);
+  const applyLogin = (user: LoginUser, token: string, rt: string) => {
+    // exactOptionalPropertyTypes: optional nullable fields must be null (not undefined) when absent.
+    const authUser: AuthUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      department: user.department ?? null,
+      mobileNumber: user.mobileNumber ?? null,
+      role: user.role,
+      profileCompleted: user.profileCompleted ?? false,
+      // userCode is a number-only optional — must be omitted entirely when absent
+      ...(user.userCode != null ? { userCode: user.userCode } : {}),
+    };
+    setAuth(authUser, token);
     localStorage.setItem('if-fleet-rt', rt);
-    navigate('/');
+  };
+
+  const handleOtpSuccess = (user: LoginUser, token: string, rt: string) => {
+    applyLogin(user, token, rt);
+    navigate(user.profileCompleted ? '/' : '/complete-profile');
   };
 
   const handlePinSuccess = (
-    user: { id: string; name: string; email: string; role: UserRole },
+    user: LoginUser,
     token: string,
     rt: string,
     pinMustChange: boolean,
   ) => {
     localStorage.setItem('if-fleet-rt', rt);
     if (pinMustChange) {
+      // Show PIN change screen before storing auth
       setPendingToken(token);
       setPendingUser(user);
     } else {
-      setAuth(user, token);
-      navigate('/');
+      applyLogin(user, token, rt);
+      navigate(user.profileCompleted ? '/' : '/complete-profile');
     }
   };
 
   const handlePinChanged = () => {
     if (pendingUser && pendingToken) {
-      setAuth(pendingUser, pendingToken);
-      navigate('/');
+      applyLogin(pendingUser, pendingToken, localStorage.getItem('if-fleet-rt') ?? '');
+      navigate(pendingUser.profileCompleted ? '/' : '/complete-profile');
     }
   };
 

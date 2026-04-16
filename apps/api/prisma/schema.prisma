@@ -133,10 +133,13 @@ enum AuditAction {
 
 model User {
   id         String     @id @default(uuid())
+  userCode   Int        @unique @default(autoincrement()) // system-generated numeric code, never changes
   employeeId String     @unique
-  name       String
+  firstName  String?    // set by user on profile completion
+  lastName   String?    // set by user on profile completion
+  name       String     // display name — auto-computed from firstName + lastName on save
   email      String     @unique
-  phone      String?
+  department String?    // organisational department
   role       UserRole   @default(EMPLOYEE)
   status     UserStatus @default(ACTIVE)
   createdAt  DateTime   @default(now())
@@ -232,6 +235,7 @@ model PresetLocation {
 
 model Booking {
   id                  String        @id @default(uuid())
+  bookingNo           Int           @unique @default(autoincrement()) // human-readable request number
   requesterId         String
   requester           User          @relation("RequesterBookings", fields: [requesterId], references: [id])
   transportType       TransportType

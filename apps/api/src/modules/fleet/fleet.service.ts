@@ -28,7 +28,17 @@ export class FleetService {
       include: {
         currentDriver: {
           include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
+            user: { select: { id: true, name: true, email: true, mobileNumber: true } },
+            // Include preset so the "Current Location" column can display the preset name
+            currentLocationPreset: { select: { id: true, name: true } },
+          },
+        },
+        // Last booking assignment gives us a location fallback when no driver is set
+        assignments: {
+          orderBy: { assignedAt: 'desc' },
+          take: 1,
+          include: {
+            booking: { select: { pickupLabel: true } },
           },
         },
       },
@@ -43,6 +53,10 @@ export class FleetService {
       where: { id: vehicleId, deletedAt: null },
     });
     if (!vehicle) throw new NotFoundException('Vehicle not found');
+    // Step 5: block reassignment while vehicle is on an active trip
+    if (vehicle.status === 'IN_TRIP') {
+      throw new BadRequestException('Cannot assign driver to a vehicle that is currently on an active trip');
+    }
 
     const driverProfile = await this.prisma.driverProfile.findFirst({
       where: { id: dto.driverProfileId, deletedAt: null },
@@ -58,12 +72,12 @@ export class FleetService {
       );
     }
 
-    // Unassign previous driver from this vehicle (if any)
+    // Step 15: block cross-assignment — admin must explicitly unassign the current driver
+    // before assigning a new one.  Silent swaps are not allowed.
     if (vehicle.currentDriverId && vehicle.currentDriverId !== dto.driverProfileId) {
-      await this.prisma.vehicle.update({
-        where: { id: vehicleId },
-        data: { currentDriverId: null, currentDriverAssignedAt: null },
-      });
+      throw new ConflictException(
+        `Vehicle ${vehicle.vehicleNo} is already assigned to a different driver. Unassign them first before assigning a new driver.`,
+      );
     }
 
     const updated = await this.prisma.vehicle.update({
@@ -76,7 +90,7 @@ export class FleetService {
       include: {
         currentDriver: {
           include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
+            user: { select: { id: true, name: true, email: true, mobileNumber: true } },
           },
         },
       },
@@ -108,6 +122,10 @@ export class FleetService {
     if (!vehicle) throw new NotFoundException('Vehicle not found');
     if (!vehicle.currentDriverId) {
       throw new BadRequestException('Vehicle has no driver assigned');
+    }
+    // Step 5: block release while an active trip is running
+    if (vehicle.status === 'IN_TRIP') {
+      throw new BadRequestException('Cannot release vehicle while a trip is active');
     }
 
     // Only ADMIN or the assigned driver themselves can unassign
@@ -166,24 +184,103 @@ export class FleetService {
     });
   }
 
-  async listAvailableWithDriver() {
+  async listAvailableWithDriver(pickupPresetId?: string) {
+    // Step 13: Strict filter — when a pickup preset is given, return ONLY vehicles whose
+    // driver's current location preset exactly matches the pickup.  No match → empty list
+    // so the frontend shows "No Preference" as the safe default (Step 14).
+    // Without a pickup preset (custom address or step 3 entered before step 2), return
+    // all assigned-driver vehicles that have set their location.
     return this.prisma.vehicle.findMany({
       where: {
         deletedAt: null,
+        status: { not: 'IN_TRIP' },
         currentDriverId: { not: null },
-        currentDriver: {
-          locationUpdatedAt: { not: null },
-        },
+        currentDriver: pickupPresetId
+          ? { locationUpdatedAt: { not: null }, currentLocationPresetId: pickupPresetId }
+          : { locationUpdatedAt: { not: null } },
       },
       include: {
         currentDriver: {
           include: {
-            user: { select: { id: true, name: true, phone: true } },
+            user: { select: { id: true, name: true, mobileNumber: true } },
             currentLocationPreset: { select: { id: true, name: true, address: true } },
           },
         },
       },
       orderBy: { vehicleNo: 'asc' },
+    });
+  }
+
+  // ── Driver self-service endpoints ─────────────────────────────────────────
+
+  async getMyDriverProfile(userId: string) {
+    const profile = await this.prisma.driverProfile.findFirst({
+      where: { userId, deletedAt: null },
+      include: {
+        user: { select: { id: true, name: true, email: true, mobileNumber: true } },
+        currentLocationPreset: { select: { id: true, name: true, address: true } },
+        assignedVehicle: {
+          select: {
+            id: true, vehicleNo: true, type: true,
+            make: true, model: true, status: true,
+            currentDriverAssignedAt: true,
+          },
+        },
+      },
+    });
+    if (!profile) throw new NotFoundException('Driver profile not found for current user');
+    return profile;
+  }
+
+  async listAvailableVehicles() {
+    return this.prisma.vehicle.findMany({
+      where: { deletedAt: null, status: 'AVAILABLE', currentDriverId: null },
+      select: { id: true, vehicleNo: true, type: true, make: true, model: true, capacity: true },
+      orderBy: { vehicleNo: 'asc' },
+    });
+  }
+
+  async selfAssignVehicle(vehicleId: string, actorId: string) {
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, deletedAt: null },
+    });
+    if (!vehicle) throw new NotFoundException('Vehicle not found');
+    if (vehicle.status !== 'AVAILABLE') {
+      throw new BadRequestException('Vehicle is not available for self-assignment');
+    }
+    if (vehicle.currentDriverId) {
+      throw new ConflictException('Vehicle already has a driver assigned');
+    }
+
+    const driverProfile = await this.prisma.driverProfile.findFirst({
+      where: { userId: actorId, deletedAt: null },
+      include: { assignedVehicle: { select: { id: true, vehicleNo: true } } },
+    });
+    if (!driverProfile) throw new NotFoundException('Driver profile not found for current user');
+    if (!driverProfile.shiftReady) {
+      throw new BadRequestException('You must be shift-ready to self-assign a vehicle. Contact admin to enable shift-ready status.');
+    }
+    if (driverProfile.assignedVehicle) {
+      throw new ConflictException(
+        `You are already assigned to vehicle ${driverProfile.assignedVehicle.vehicleNo}. Release it first.`,
+      );
+    }
+
+    return this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        currentDriverId: driverProfile.id,
+        currentDriverAssignedAt: new Date(),
+        status: 'ASSIGNED',
+      },
+      include: {
+        currentDriver: {
+          include: {
+            user: { select: { id: true, name: true, email: true, mobileNumber: true } },
+            assignedVehicle: { select: { id: true, vehicleNo: true, type: true, make: true, model: true, status: true, currentDriverAssignedAt: true } },
+          },
+        },
+      },
     });
   }
 
@@ -237,7 +334,7 @@ export class FleetService {
       where: { deletedAt: null },
       include: {
         user: {
-          select: { id: true, name: true, email: true, employeeId: true, phone: true, status: true },
+          select: { id: true, name: true, email: true, employeeId: true, mobileNumber: true, status: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -266,7 +363,7 @@ export class FleetService {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, employeeId: true, phone: true, status: true },
+          select: { id: true, name: true, email: true, employeeId: true, mobileNumber: true, status: true },
         },
       },
     });
@@ -295,7 +392,7 @@ export class FleetService {
       },
       include: {
         user: {
-          select: { id: true, name: true, email: true, employeeId: true, phone: true, status: true },
+          select: { id: true, name: true, email: true, employeeId: true, mobileNumber: true, status: true },
         },
       },
     });

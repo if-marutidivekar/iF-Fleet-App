@@ -17,7 +17,7 @@ interface Booking {
   assignment?: {
     vehicle?: { vehicleNo: string; type: string };
     driver?: {
-      user: { name: string; phone?: string };
+      user: { name: string; mobileNumber?: string };
       currentLocationText?: string;
       currentLocationPreset?: { name: string };
     };
@@ -113,7 +113,7 @@ export default function EmployeeTrack() {
               {driver && (
                 <View style={s.driverBox}>
                   <Text style={s.driverName}>👤 {driver.user.name}{b.assignment?.vehicle ? ` · ${b.assignment.vehicle.vehicleNo}` : ''}</Text>
-                  {driver.user.phone && <Text style={s.driverPhone}>📞 {driver.user.phone}</Text>}
+                  {driver.user.mobileNumber && <Text style={s.driverPhone}>📞 {driver.user.mobileNumber}</Text>}
                   {driverLoc && (
                     <Text style={s.driverLocation}>📍 Currently at: {driverLoc}</Text>
                   )}

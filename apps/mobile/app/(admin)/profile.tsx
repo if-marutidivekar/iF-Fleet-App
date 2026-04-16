@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../stores/auth.store';
@@ -18,35 +18,45 @@ export default function AdminProfile() {
   };
 
   return (
-    <View style={[s.container, { paddingTop: insets.top + 16 }]}>
+    <ScrollView
+      style={s.container}
+      contentContainerStyle={{ paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: insets.bottom + 24, alignItems: 'center' }}
+    >
       <Text style={s.title}>Profile</Text>
 
       <View style={s.avatar}>
-        <Text style={s.avatarText}>{user?.name?.charAt(0).toUpperCase() ?? 'A'}</Text>
+        <Text style={s.avatarText}>{(user?.firstName ?? user?.name ?? 'A').charAt(0).toUpperCase()}</Text>
       </View>
       <Text style={s.name}>{user?.name}</Text>
       <Text style={s.email}>{user?.email}</Text>
+      {user?.userCode && (
+        <Text style={s.userCode}>Code: {String(user.userCode).padStart(6, '0')}</Text>
+      )}
 
       <View style={s.rolePill}>
         <Text style={s.roleText}>🛡 ADMIN</Text>
       </View>
 
       <View style={s.infoCard}>
-        <InfoRow label="Email" value={user?.email ?? '—'} />
-        <InfoRow label="Role" value="Administrator" last />
+        <InfoRow label="First Name"  value={user?.firstName ?? '—'} />
+        <InfoRow label="Last Name"   value={user?.lastName ?? '—'} />
+        <InfoRow label="Email"       value={user?.email ?? '—'} />
+        <InfoRow label="Department"  value={user?.department ?? '—'} />
+        <InfoRow label="Mobile"      value={user?.mobileNumber ?? '—'} />
+        <InfoRow label="Role"        value="Administrator" last />
       </View>
 
       <View style={s.notice}>
         <Text style={s.noticeText}>
           💡 Full admin controls are available on the web dashboard.{'\n'}
-          Use this app for quick approvals and trip monitoring.
+          To edit your profile details, use the web portal.
         </Text>
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
         <Text style={s.logoutText}>Sign Out</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -60,14 +70,15 @@ function InfoRow({ label, value, last = false }: { label: string; value: string;
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.bg, alignItems: 'center', paddingHorizontal: 24 },
+  container: { flex: 1, backgroundColor: C.bg },
   title: { fontSize: 20, fontWeight: '800', color: C.text, alignSelf: 'flex-start', marginBottom: 24 },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.purple ?? '#7c3aed', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   avatarText: { fontSize: 32, fontWeight: '800', color: '#fff' },
   name: { fontSize: 20, fontWeight: '700', color: C.text },
-  email: { fontSize: 14, color: C.muted, marginTop: 2, marginBottom: 12 },
-  rolePill: { backgroundColor: C.purpleLight, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 24 },
-  roleText: { color: C.purple, fontWeight: '700', fontSize: 13 },
+  email: { fontSize: 14, color: C.muted, marginTop: 2 },
+  userCode: { fontSize: 11, color: C.light, marginTop: 2, fontVariant: ['tabular-nums'] },
+  rolePill: { backgroundColor: C.purpleLight ?? '#ede9fe', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 20, marginTop: 10 },
+  roleText: { color: C.purple ?? '#7c3aed', fontWeight: '700', fontSize: 13 },
   infoCard: { width: '100%', backgroundColor: C.surface, borderRadius: 14, padding: 4, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 13 },
   infoRowBorder: { borderBottomWidth: 1, borderBottomColor: C.border },

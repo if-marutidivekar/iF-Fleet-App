@@ -5,24 +5,29 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole, DriverAuthMethod } from '@if-fleet/domain';
 
 export class CreateUserDto {
-  @ApiProperty({ example: 'Jane Doe' })
-  @IsString()
-  @IsNotEmpty()
-  name!: string;
-
   @ApiProperty({ example: 'jane.doe@ideaforgetech.com' })
   @IsEmail()
   email!: string;
+
+  @ApiPropertyOptional({ example: 'Jane' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Doe' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @ApiPropertyOptional({ example: 'Engineering' })
+  @IsOptional()
+  @IsString()
+  department?: string;
 
   @ApiPropertyOptional({ example: 'EMP-1042' })
   @IsOptional()
   @IsString()
   employeeId?: string;
-
-  @ApiPropertyOptional({ example: '+91-9876543210' })
-  @IsOptional()
-  @IsString()
-  phone?: string;
 
   @ApiPropertyOptional({ enum: UserRole, default: UserRole.EMPLOYEE })
   @IsOptional()

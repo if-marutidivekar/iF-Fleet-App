@@ -8,10 +8,12 @@ import { C } from '../../lib/theme';
 
 interface Booking {
   id: string;
+  bookingNo: number;
   transportType: string;
   passengerCount?: number;
   materialDescription?: string;
   requestedAt: string;
+  status: string;
   requester: { name: string; employeeId: string };
   pickupLabel?: string;
   pickupCustomAddress?: string;
@@ -87,6 +89,7 @@ export default function QueueScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.requester}>{b.requester.name}</Text>
                 <Text style={s.empId}>{b.requester.employeeId}</Text>
+                <Text style={s.bookingNo}>Req #{b.bookingNo}</Text>
               </View>
               <Badge label={b.transportType.replace(/_/g, ' ')} color={C.primary} />
             </View>
@@ -184,6 +187,7 @@ const s = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   requester: { fontSize: 15, fontWeight: '700', color: C.text },
   empId: { fontSize: 12, color: C.muted, marginTop: 1 },
+  bookingNo: { fontSize: 11, color: C.light, marginTop: 2 },
   divider: { height: 1, backgroundColor: C.border, marginBottom: 10 },
   infoRow: { flexDirection: 'row', marginBottom: 5 },
   infoLabel: { fontSize: 12, color: C.muted, width: 72, fontWeight: '600' },

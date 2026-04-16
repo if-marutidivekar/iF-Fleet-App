@@ -20,7 +20,7 @@ export class TripsService {
       include: {
         booking: {
           include: {
-            requester: { select: { id: true, name: true, email: true } },
+            requester: { select: { id: true, name: true, email: true, mobileNumber: true } },
             pickupPreset: { select: { id: true, name: true, address: true } },
             dropoffPreset: { select: { id: true, name: true, address: true } },
           },
@@ -28,7 +28,7 @@ export class TripsService {
         vehicle: { select: { id: true, vehicleNo: true, type: true, make: true, model: true } },
         driver: {
           include: {
-            user: { select: { id: true, name: true, phone: true } },
+            user: { select: { id: true, name: true, mobileNumber: true } },
           },
         },
       },

@@ -40,11 +40,6 @@ export default function AdminDashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-bookings'] }),
   });
 
-  const reject = useMutation({
-    mutationFn: (id: string) => api.patch(`/bookings/${id}/reject`, { reason: 'Rejected from mobile' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-bookings'] }),
-  });
-
   const pending = bookings.filter(b => b.status === 'PENDING_APPROVAL');
   const activeTrips = trips.filter(t => ['STARTED', 'IN_PROGRESS'].includes(t.status));
   const availableVehicles = vehicles.filter(v => v.status === 'AVAILABLE');
@@ -79,7 +74,7 @@ export default function AdminDashboard() {
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>Pending Approvals</Text>
           {pending.length > 3 && (
-            <TouchableOpacity onPress={() => router.push('/(admin)/queue')}>
+            <TouchableOpacity onPress={() => router.push('/(admin)/book')}>
               <Text style={s.seeAll}>See all {pending.length} →</Text>
             </TouchableOpacity>
           )}
@@ -106,10 +101,10 @@ export default function AdminDashboard() {
               <Text style={s.time}>{new Date(b.requestedAt).toLocaleString()}</Text>
               <View style={s.actionRow}>
                 <TouchableOpacity style={[s.actionBtn, s.approveBtn]} onPress={() => approve.mutate(b.id)} disabled={approve.isPending}>
-                  <Text style={s.actionText}>✓ Approve</Text>
+                  <Text style={s.actionText}>{approve.isPending ? '…' : '✓ Approve'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.actionBtn, s.rejectBtn]} onPress={() => reject.mutate(b.id)} disabled={reject.isPending}>
-                  <Text style={s.actionText}>✗ Reject</Text>
+                <TouchableOpacity style={[s.actionBtn, s.rejectBtn]} onPress={() => router.push('/(admin)/book')}>
+                  <Text style={s.actionText}>✗ Reject →</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -122,7 +117,7 @@ export default function AdminDashboard() {
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>Active Trips</Text>
           {activeTrips.length > 2 && (
-            <TouchableOpacity onPress={() => router.push('/(admin)/trips')}>
+            <TouchableOpacity onPress={() => router.push('/(admin)/track')}>
               <Text style={s.seeAll}>See all →</Text>
             </TouchableOpacity>
           )}

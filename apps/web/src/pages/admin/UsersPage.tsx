@@ -1,18 +1,22 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
 interface User {
   id: string;
+  userCode?: number;
   employeeId: string;
+  firstName?: string | null;
+  lastName?: string | null;
   name: string;
   email: string;
-  phone?: string;
+  department?: string | null;
   role: string;
   status: string;
   authMethod: string;
   mobileNumber?: string;
   pinMustChange?: boolean;
+  profileCompleted: boolean;
   createdAt: string;
   hasDriverProfile: boolean;
 }
@@ -31,8 +35,15 @@ const roleColor: Record<string, string> = {
 };
 
 const emptyAdd = {
-  name: '', email: '', employeeId: '', role: 'EMPLOYEE', phone: '',
-  authMethod: 'EMAIL_OTP', mobileNumber: '', initialPin: '',
+  email: '',
+  firstName: '',
+  lastName: '',
+  employeeId: '',
+  department: '',
+  role: 'EMPLOYEE',
+  authMethod: 'EMAIL_OTP',
+  mobileNumber: '',
+  initialPin: '',
 };
 
 type AddForm = typeof emptyAdd;
@@ -63,15 +74,141 @@ function AuthMethodBadge({ method }: { method: string }) {
   );
 }
 
+// ─── CSV Import Panel ─────────────────────────────────────────────────────────
+
+interface BulkResult {
+  total: number;
+  created: number;
+  updated: number;
+  failed: number;
+  errors: Array<{ row: number; email: string; error: string }>;
+}
+
+function CsvImportPanel({ onDone }: { onDone: () => void }) {
+  const [csvText, setCsvText] = useState('');
+  const [result, setResult] = useState<BulkResult | null>(null);
+  const [importError, setImportError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const importCsv = useMutation({
+    mutationFn: (text: string) =>
+      api.post<BulkResult>('/users/bulk-import', { csvText: text }),
+    onSuccess: ({ data }) => {
+      setResult(data);
+      setImportError('');
+      onDone(); // refresh user list
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      setImportError(Array.isArray(msg) ? msg.join(', ') : (msg ?? 'Import failed'));
+    },
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setCsvText((ev.target?.result as string) ?? '');
+    reader.readAsText(file);
+  };
+
+  const sampleCsv = `email,firstName,lastName,employeeId,department,role,authMethod,mobileNumber,initialPin
+jane.doe@company.com,Jane,Doe,EMP-1001,Engineering,EMPLOYEE,,
+john.driver@company.com,John,Driver,DRV-2001,Operations,DRIVER,MOBILE_PIN,+919876543210,123456`;
+
+  return (
+    <div style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem' }}>
+      <h2 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Bulk Import Users (CSV)</h2>
+      <p style={{ fontSize: 13, color: '#64748b', marginBottom: '1rem' }}>
+        Upload a CSV file or paste CSV text. <strong>Email is the upsert key</strong> — existing users are updated, new users are created.
+      </p>
+
+      {/* Sample CSV */}
+      <details style={{ marginBottom: '1rem' }}>
+        <summary style={{ fontSize: 13, color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}>View sample CSV format</summary>
+        <pre style={{ marginTop: 8, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.75rem', fontSize: 11, overflowX: 'auto', color: '#0f172a' }}>
+          {sampleCsv}
+        </pre>
+      </details>
+
+      {/* File picker */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: '0.75rem', alignItems: 'center' }}>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{ padding: '0.4rem 1rem', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}
+        >
+          📂 Choose File
+        </button>
+        <input ref={fileInputRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={handleFileChange} />
+        {csvText && <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ File loaded ({csvText.split('\n').length - 1} data rows)</span>}
+      </div>
+
+      {/* Text area */}
+      <textarea
+        value={csvText}
+        onChange={(e) => setCsvText(e.target.value)}
+        placeholder="Or paste CSV content here..."
+        rows={5}
+        style={{ width: '100%', padding: '0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+      />
+
+      {importError && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 4 }}>{importError}</p>}
+
+      {/* Result */}
+      {result && (
+        <div style={{ marginTop: '0.75rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '0.75rem 1rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#059669', marginBottom: 4 }}>
+            Import Complete — {result.total} processed
+          </div>
+          <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#374151' }}>
+            <span>✅ Created: <strong>{result.created}</strong></span>
+            <span>✏ Updated: <strong>{result.updated}</strong></span>
+            <span style={{ color: result.failed > 0 ? '#dc2626' : '#374151' }}>❌ Failed: <strong>{result.failed}</strong></span>
+          </div>
+          {result.errors.length > 0 && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>Errors:</div>
+              {result.errors.map((err, i) => (
+                <div key={i} style={{ fontSize: 12, color: '#dc2626', padding: '2px 0' }}>
+                  Row {err.row} ({err.email}): {err.error}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: '0.75rem' }}>
+        <button
+          onClick={() => importCsv.mutate(csvText)}
+          disabled={importCsv.isPending || !csvText.trim()}
+          style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: !csvText.trim() || importCsv.isPending ? 0.6 : 1 }}
+        >
+          {importCsv.isPending ? 'Importing…' : 'Import CSV'}
+        </button>
+        <button
+          onClick={() => { setCsvText(''); setResult(null); setImportError(''); }}
+          style={{ padding: '0.5rem 1rem', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export function UsersPage() {
   const qc = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const [addForm, setAddForm] = useState<AddForm>({ ...emptyAdd });
   const [addError, setAddError] = useState('');
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
-    name: '', phone: '', employeeId: '',
+    firstName: '', lastName: '', employeeId: '', department: '',
     authMethod: 'EMAIL_OTP', mobileNumber: '', initialPin: '',
   });
   const [editError, setEditError] = useState('');
@@ -141,9 +278,10 @@ export function UsersPage() {
     setEditId(user.id);
     setEditError('');
     setEditForm({
-      name: user.name,
-      phone: user.phone ?? '',
+      firstName: user.firstName ?? '',
+      lastName: user.lastName ?? '',
       employeeId: user.employeeId ?? '',
+      department: user.department ?? '',
       authMethod: user.authMethod,
       mobileNumber: user.mobileNumber ?? '',
       initialPin: '',
@@ -153,13 +291,14 @@ export function UsersPage() {
   const handleSaveEdit = () => {
     if (!editId) return;
     const data: Record<string, string> = {};
-    if (editForm.name) data['name'] = editForm.name;
-    if (editForm.phone) data['phone'] = editForm.phone;
+    if (editForm.firstName)  data['firstName']  = editForm.firstName;
+    if (editForm.lastName)   data['lastName']   = editForm.lastName;
     if (editForm.employeeId) data['employeeId'] = editForm.employeeId;
+    if (editForm.department) data['department'] = editForm.department;
     data['authMethod'] = editForm.authMethod;
     if (editForm.authMethod === 'MOBILE_PIN') {
       if (editForm.mobileNumber) data['mobileNumber'] = editForm.mobileNumber;
-      if (editForm.initialPin) data['initialPin'] = editForm.initialPin;
+      if (editForm.initialPin)   data['initialPin']   = editForm.initialPin;
     }
     updateUser.mutate({ id: editId, data });
   };
@@ -181,13 +320,26 @@ export function UsersPage() {
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>User Management</h1>
           <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>{users.length} users registered</p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
-        >
-          {showAddForm ? 'Cancel' : '+ Add User'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => { setShowCsvImport(!showCsvImport); setShowAddForm(false); }}
+            style={{ padding: '0.5rem 1rem', background: '#f0fdf4', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+          >
+            {showCsvImport ? 'Close Import' : '📂 Import CSV'}
+          </button>
+          <button
+            onClick={() => { setShowAddForm(!showAddForm); setShowCsvImport(false); }}
+            style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+          >
+            {showAddForm ? 'Cancel' : '+ Add User'}
+          </button>
+        </div>
       </div>
+
+      {/* CSV Import Panel */}
+      {showCsvImport && (
+        <CsvImportPanel onDone={() => { void qc.invalidateQueries({ queryKey: ['admin-users'] }); }} />
+      )}
 
       {/* Add User Form */}
       {showAddForm && (
@@ -195,10 +347,11 @@ export function UsersPage() {
           <h2 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', marginBottom: '1rem' }}>Add New User</h2>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
             {[
-              { label: 'Full Name *', key: 'name', type: 'text', placeholder: 'Jane Doe' },
-              { label: 'Email *', key: 'email', type: 'email', placeholder: 'jane@ideaforgetech.com' },
+              { label: 'Email *', key: 'email', type: 'email', placeholder: 'jane@company.com' },
+              { label: 'First Name', key: 'firstName', type: 'text', placeholder: 'Jane' },
+              { label: 'Last Name',  key: 'lastName',  type: 'text', placeholder: 'Doe' },
               { label: 'Employee ID (optional)', key: 'employeeId', type: 'text', placeholder: 'Auto-assigned if blank' },
-              { label: 'Phone', key: 'phone', type: 'text', placeholder: '+91-9876543210' },
+              { label: 'Department', key: 'department', type: 'text', placeholder: 'Engineering' },
             ].map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
                 <span style={{ fontWeight: 600, color: '#374151' }}>{f.label}</span>
@@ -270,7 +423,7 @@ export function UsersPage() {
           {addError && <p style={{ color: '#dc2626', fontSize: 13, marginTop: '0.5rem' }}>{addError}</p>}
           <button
             onClick={() => createUser.mutate(addForm)}
-            disabled={createUser.isPending || !addForm.name || !addForm.email}
+            disabled={createUser.isPending || !addForm.email}
             style={{ marginTop: '1rem', padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: createUser.isPending ? 0.7 : 1 }}
           >
             {createUser.isPending ? 'Creating...' : 'Create User'}
@@ -286,8 +439,8 @@ export function UsersPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
-                {['Name', 'Email / Mobile', 'Role', 'Auth', 'Status', 'Joined', 'Actions'].map((h) => (
-                  <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: 0.5 }}>
+                {['Code', 'Name', 'Email / Mobile', 'Dept.', 'Role', 'Auth', 'Status', 'Joined', 'Actions'].map((h) => (
+                  <th key={h} style={{ padding: '0.75rem 0.85rem', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: 0.5 }}>
                     {h}
                   </th>
                 ))}
@@ -300,16 +453,31 @@ export function UsersPage() {
                     key={user.id}
                     style={{ borderBottom: editId === user.id ? 'none' : i < users.length - 1 ? '1px solid #f1f5f9' : 'none' }}
                   >
-                    <td style={{ padding: '0.75rem 1rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
-                      {user.name}
-                      {user.hasDriverProfile && <span style={{ marginLeft: 6, fontSize: 10, color: '#059669', fontWeight: 700 }}>DRV</span>}
-                      {user.pinMustChange && <span style={{ marginLeft: 6, fontSize: 10, color: '#dc2626', fontWeight: 700 }}>PIN↑</span>}
+                    {/* User Code */}
+                    <td style={{ padding: '0.75rem 0.85rem', fontSize: 12, color: '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>
+                      {user.userCode ? String(user.userCode).padStart(6, '0') : '—'}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: 13, color: '#374151' }}>
+                    {/* Name */}
+                    <td style={{ padding: '0.75rem 0.85rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                      <div>{user.name}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                        {user.employeeId}
+                        {user.hasDriverProfile && <span style={{ marginLeft: 6, color: '#059669', fontWeight: 700 }}>DRV</span>}
+                        {user.pinMustChange && <span style={{ marginLeft: 6, color: '#dc2626', fontWeight: 700 }}>PIN↑</span>}
+                        {!user.profileCompleted && <span style={{ marginLeft: 6, color: '#d97706', fontWeight: 700 }}>PROFILE!</span>}
+                      </div>
+                    </td>
+                    {/* Email / Mobile */}
+                    <td style={{ padding: '0.75rem 0.85rem', fontSize: 13, color: '#374151' }}>
                       <div>{user.email}</div>
                       {user.mobileNumber && <div style={{ color: '#64748b', fontSize: 12 }}>{user.mobileNumber}</div>}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    {/* Department */}
+                    <td style={{ padding: '0.75rem 0.85rem', fontSize: 13, color: '#374151' }}>
+                      {user.department ?? <span style={{ color: '#cbd5e1' }}>—</span>}
+                    </td>
+                    {/* Role */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
                       <select
                         value={user.role}
                         onChange={(e) => handleRoleChange(user, e.target.value)}
@@ -318,16 +486,20 @@ export function UsersPage() {
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    {/* Auth */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
                       {user.role === 'DRIVER' ? <AuthMethodBadge method={user.authMethod} /> : <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    {/* Status */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
                       <StatusBadge status={user.status} />
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: 12, color: '#94a3b8' }}>
+                    {/* Joined */}
+                    <td style={{ padding: '0.75rem 0.85rem', fontSize: 12, color: '#94a3b8' }}>
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                    {/* Actions */}
+                    <td style={{ padding: '0.75rem 0.85rem', display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                       <button
                         onClick={() => editId === user.id ? setEditId(null) : startEdit(user)}
                         style={{ padding: '0.25rem 0.625rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
@@ -354,12 +526,13 @@ export function UsersPage() {
                   {/* Inline edit row */}
                   {editId === user.id && (
                     <tr key={`${user.id}-edit`} style={{ background: '#f8fafc', borderBottom: i < users.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                      <td colSpan={7} style={{ padding: '12px 16px' }}>
+                      <td colSpan={9} style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           {[
-                            { label: 'Name', key: 'name', w: 160 },
-                            { label: 'Phone', key: 'phone', w: 150 },
+                            { label: 'First Name', key: 'firstName', w: 130 },
+                            { label: 'Last Name',  key: 'lastName',  w: 130 },
                             { label: 'Employee ID', key: 'employeeId', w: 120 },
+                            { label: 'Department',  key: 'department', w: 130 },
                           ].map((f) => (
                             <label key={f.key} style={{ fontSize: 13 }}>
                               <span style={{ fontWeight: 600, color: '#374151', display: 'block', marginBottom: 2 }}>{f.label}</span>
@@ -429,7 +602,7 @@ export function UsersPage() {
                   {/* Inline Reset PIN row */}
                   {resetPinId === user.id && (
                     <tr key={`${user.id}-pin`} style={{ background: '#fff7ed', borderBottom: i < users.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                      <td colSpan={7} style={{ padding: '12px 16px' }}>
+                      <td colSpan={9} style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           <label style={{ fontSize: 13 }}>
                             <span style={{ fontWeight: 600, color: '#374151', display: 'block', marginBottom: 2 }}>New PIN (6 digits) *</span>
@@ -461,7 +634,7 @@ export function UsersPage() {
                 </>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No users found</td></tr>
+                <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No users found</td></tr>
               )}
             </tbody>
           </table>

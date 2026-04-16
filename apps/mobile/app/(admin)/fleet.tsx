@@ -15,7 +15,7 @@ interface DriverProfile {
   shiftReady: boolean;
   currentLocationText?: string;
   locationUpdatedAt?: string;
-  user: { id: string; name: string; email: string; phone?: string };
+  user: { id: string; name: string; email: string; mobileNumber?: string };
 }
 
 interface Vehicle {

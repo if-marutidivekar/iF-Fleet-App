@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ScrollView, View, Text, TouchableOpacity, TextInput,
   StyleSheet, ActivityIndicator, Alert,
@@ -53,10 +53,12 @@ export default function NewBookingScreen() {
   const [materialDesc, setMaterialDesc] = useState('');
 
   // Step 2 — Pickup, Drop & Time
+  // Default to first preset (not "Other address") once locations load
   const [pickupPresetId, setPickupPresetId] = useState<string | null>(null);
   const [pickupCustom, setPickupCustom] = useState('');
   const [dropoffPresetId, setDropoffPresetId] = useState<string | null>(null);
   const [dropoffCustom, setDropoffCustom] = useState('');
+  const [locationsInitialized, setLocationsInitialized] = useState(false);
   const [requestedAt, setRequestedAt] = useState(() => {
     const d = new Date(); d.setHours(d.getHours() + 1); d.setMinutes(0, 0, 0);
     return formatDateTimeLocal(d);
@@ -65,6 +67,12 @@ export default function NewBookingScreen() {
   // Step 3 — Available Vehicles
   const [preferredVehicleId, setPreferredVehicleId] = useState<string | null>(null);
 
+  // Step 13/14: Reset vehicle preference whenever pickup changes so stale selections
+  // are never silently carried forward to a different pickup location.
+  useEffect(() => {
+    setPreferredVehicleId(null);
+  }, [pickupPresetId]);
+
   // Data fetching
   const { data: locations = [], isLoading: locLoading } = useQuery<PresetLocation[]>({
     queryKey: ['preset-locations'],
@@ -72,17 +80,47 @@ export default function NewBookingScreen() {
     staleTime: 5 * 60_000,
   });
 
+  // Auto-select the first preset for pickup & drop once loaded (dropdown defaults)
+  if (!locationsInitialized && locations.length > 0) {
+    setLocationsInitialized(true);
+    if (pickupPresetId === null) setPickupPresetId(locations[0]!.id);
+    if (dropoffPresetId === null) setDropoffPresetId(locations[0]!.id);
+  }
+
+  const pickupPresetParam =
+    pickupPresetId && pickupPresetId !== '__other__' ? pickupPresetId : undefined;
+
   const { data: availableVehicles = [], isLoading: vehiclesLoading } = useQuery<AvailableVehicle[]>({
-    queryKey: ['available-with-driver'],
-    queryFn: () => api.get<AvailableVehicle[]>('/fleet/vehicles/available-with-driver').then(r => r.data),
+    queryKey: ['available-with-driver', pickupPresetParam],
+    queryFn: () => {
+      const url = pickupPresetParam
+        ? `/fleet/vehicles/available-with-driver?pickupPresetId=${pickupPresetParam}`
+        : '/fleet/vehicles/available-with-driver';
+      return api.get<AvailableVehicle[]>(url).then(r => r.data);
+    },
     enabled: step === 3,
     staleTime: 60_000,
   });
+
+  const resetForm = () => {
+    setStep(1);
+    setTransport('PERSON');
+    setPassengerCount('1');
+    setMaterialDesc('');
+    setPickupPresetId(locations.length > 0 ? locations[0]!.id : null);
+    setPickupCustom('');
+    setDropoffPresetId(locations.length > 0 ? locations[0]!.id : null);
+    setDropoffCustom('');
+    const d = new Date(); d.setHours(d.getHours() + 1); d.setMinutes(0, 0, 0);
+    setRequestedAt(formatDateTimeLocal(d));
+    setPreferredVehicleId(null);
+  };
 
   const createBooking = useMutation({
     mutationFn: (body: object) => api.post('/bookings', body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['my-bookings'] });
+      resetForm();
       Alert.alert('Booking Submitted!', 'Your booking request has been submitted.', [
         { text: 'OK', onPress: () => router.push('/(employee)') },
       ]);
@@ -100,25 +138,35 @@ export default function NewBookingScreen() {
     };
     if (transport !== 'MATERIAL_ONLY') payload['passengerCount'] = Number(passengerCount);
     if (transport !== 'PERSON') payload['materialDescription'] = materialDesc;
-    if (pickupPresetId) payload['pickupPresetId'] = pickupPresetId;
+    if (pickupPresetId && pickupPresetId !== '__other__') payload['pickupPresetId'] = pickupPresetId;
     else payload['pickupCustomAddress'] = pickupCustom;
-    if (dropoffPresetId) payload['dropoffPresetId'] = dropoffPresetId;
+    if (dropoffPresetId && dropoffPresetId !== '__other__') payload['dropoffPresetId'] = dropoffPresetId;
     else payload['dropoffCustomAddress'] = dropoffCustom;
     if (preferredVehicleId) payload['preferredVehicleId'] = preferredVehicleId;
     createBooking.mutate(payload);
   };
 
   // Labels for review
-  const pickupLabel  = pickupPresetId  ? (locations.find(l => l.id === pickupPresetId)?.name  ?? 'Selected') : (pickupCustom  || 'Not set');
-  const dropoffLabel = dropoffPresetId ? (locations.find(l => l.id === dropoffPresetId)?.name ?? 'Selected') : (dropoffCustom || 'Not set');
+  const pickupLabel  = (pickupPresetId && pickupPresetId !== '__other__')
+    ? (locations.find(l => l.id === pickupPresetId)?.name  ?? 'Selected')
+    : (pickupCustom  || 'Not set');
+  const dropoffLabel = (dropoffPresetId && dropoffPresetId !== '__other__')
+    ? (locations.find(l => l.id === dropoffPresetId)?.name ?? 'Selected')
+    : (dropoffCustom || 'Not set');
   const vehicleLabel = preferredVehicleId
     ? availableVehicles.find(v => v.id === preferredVehicleId)?.vehicleNo ?? 'Selected'
     : 'No preference';
 
-  // Validation
-  const canNext2 = (pickupPresetId !== null || pickupCustom.trim().length > 2)
-    && (dropoffPresetId !== null || dropoffCustom.trim().length > 2)
-    && !!requestedAt;
+  // Validation — preset selected OR custom address typed
+  const canNext2 = (
+      (pickupPresetId !== null && pickupPresetId !== '__other__') ||
+      pickupCustom.trim().length > 2
+    ) &&
+    (
+      (dropoffPresetId !== null && dropoffPresetId !== '__other__') ||
+      dropoffCustom.trim().length > 2
+    ) &&
+    !!requestedAt;
 
   const STEPS = ['Transport', 'Locations & Time', 'Vehicle', 'Review'];
 
@@ -222,13 +270,14 @@ export default function NewBookingScreen() {
                 {pickupPresetId === loc.id && <Text style={s.check}>✓</Text>}
               </TouchableOpacity>
             ))}
+            {/* "Other address" — explicitly opt in */}
             <TouchableOpacity
-              style={[s.locCard, pickupPresetId === null && pickupCustom.length > 0 ? s.locCardActive : {}]}
-              onPress={() => setPickupPresetId(null)}
+              style={[s.locCard, pickupPresetId === '__other__' ? s.locCardActive : {}]}
+              onPress={() => setPickupPresetId('__other__')}
             >
-              <Text style={[s.locName, pickupPresetId === null ? { color: C.primary } : {}]}>📝 Other address</Text>
+              <Text style={[s.locName, pickupPresetId === '__other__' ? { color: C.primary } : {}]}>📝 Other address</Text>
             </TouchableOpacity>
-            {pickupPresetId === null && (
+            {pickupPresetId === '__other__' && (
               <TextInput
                 style={s.input}
                 value={pickupCustom}
@@ -253,13 +302,14 @@ export default function NewBookingScreen() {
                 {dropoffPresetId === loc.id && <Text style={s.check}>✓</Text>}
               </TouchableOpacity>
             ))}
+            {/* "Other address" — explicitly opt in */}
             <TouchableOpacity
-              style={[s.locCard, dropoffPresetId === null && dropoffCustom.length > 0 ? s.locCardActive : {}]}
-              onPress={() => setDropoffPresetId(null)}
+              style={[s.locCard, dropoffPresetId === '__other__' ? s.locCardActive : {}]}
+              onPress={() => setDropoffPresetId('__other__')}
             >
-              <Text style={[s.locName, dropoffPresetId === null ? { color: C.primary } : {}]}>📝 Other address</Text>
+              <Text style={[s.locName, dropoffPresetId === '__other__' ? { color: C.primary } : {}]}>📝 Other address</Text>
             </TouchableOpacity>
-            {dropoffPresetId === null && (
+            {dropoffPresetId === '__other__' && (
               <TextInput
                 style={s.input}
                 value={dropoffCustom}
@@ -296,33 +346,42 @@ export default function NewBookingScreen() {
         {step === 3 && (
           <>
             <Text style={s.stepTitle}>Available Vehicles</Text>
-            <Text style={s.stepDesc}>Select a vehicle with driver, or skip to proceed without a preference.</Text>
+            <Text style={s.stepDesc}>
+              {pickupPresetParam
+                ? `Vehicles whose driver is at your pickup location.`
+                : 'Select a vehicle with driver, or proceed without a preference.'}
+            </Text>
+
+            {/* Step 14: No Preference — ALWAYS shown first as the safe default */}
+            <TouchableOpacity
+              style={[s.vehicleCard, preferredVehicleId === null && s.vehicleCardSelected]}
+              onPress={() => setPreferredVehicleId(null)}
+            >
+              <Text style={s.noPreferenceIcon}>🔀</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.vehicleNo, preferredVehicleId === null && { color: C.primary }]}>No Preference</Text>
+                <Text style={s.vehicleType}>Admin will assign the best available vehicle</Text>
+              </View>
+              {preferredVehicleId === null && <Text style={s.check}>✓</Text>}
+            </TouchableOpacity>
 
             {vehiclesLoading && <ActivityIndicator color={C.primary} style={{ margin: 24 }} />}
 
+            {/* Step 13/14: context-aware empty state when no vehicles match pickup */}
             {!vehiclesLoading && availableVehicles.length === 0 && (
               <View style={s.noVehicleBox}>
                 <Text style={s.noVehicleIcon}>🚗</Text>
-                <Text style={s.noVehicleTitle}>No Vehicles Currently Available</Text>
+                <Text style={s.noVehicleTitle}>
+                  {pickupPresetParam
+                    ? 'No Vehicles at This Location'
+                    : 'No Vehicles Currently Available'}
+                </Text>
                 <Text style={s.noVehicleText}>
-                  No drivers have set their location yet. You can still submit your booking — admin will assign a vehicle.
+                  {pickupPresetParam
+                    ? `No driver is currently stationed at this pickup. "No Preference" is selected — admin will assign the best vehicle.`
+                    : 'No drivers have set their location yet. You can still submit your booking — admin will assign a vehicle.'}
                 </Text>
               </View>
-            )}
-
-            {/* No preference option */}
-            {availableVehicles.length > 0 && (
-              <TouchableOpacity
-                style={[s.vehicleCard, preferredVehicleId === null && s.vehicleCardSelected]}
-                onPress={() => setPreferredVehicleId(null)}
-              >
-                <Text style={s.noPreferenceIcon}>🔀</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.vehicleNo, preferredVehicleId === null && { color: C.primary }]}>No Preference</Text>
-                  <Text style={s.vehicleType}>Admin will assign the best available vehicle</Text>
-                </View>
-                {preferredVehicleId === null && <Text style={s.check}>✓</Text>}
-              </TouchableOpacity>
             )}
 
             {availableVehicles.map(v => {
@@ -400,7 +459,7 @@ export default function NewBookingScreen() {
           >
             {createBooking.isPending
               ? <ActivityIndicator color="#fff" />
-              : <Text style={s.nextBtnTxt}>Submit Booking</Text>}
+              : <Text style={s.nextBtnTxt}>Submit Booking Request</Text>}
           </TouchableOpacity>
         )}
       </View>

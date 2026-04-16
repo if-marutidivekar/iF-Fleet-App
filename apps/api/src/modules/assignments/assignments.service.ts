@@ -16,7 +16,7 @@ export class AssignmentsService {
   private assignmentInclude = {
     booking: {
       include: {
-        requester: { select: { id: true, name: true, email: true } },
+        requester: { select: { id: true, name: true, email: true, mobileNumber: true } },
         pickupPreset: { select: { id: true, name: true, address: true } },
         dropoffPreset: { select: { id: true, name: true, address: true } },
       },
@@ -24,7 +24,7 @@ export class AssignmentsService {
     vehicle: { select: { id: true, vehicleNo: true, type: true, make: true, model: true, capacity: true } },
     driver: {
       include: {
-        user: { select: { id: true, name: true, email: true, phone: true } },
+        user: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     },
     assignedBy: { select: { id: true, name: true } },
@@ -50,15 +50,49 @@ export class AssignmentsService {
     }
 
     // Validate vehicle is AVAILABLE
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId } });
-    if (!vehicle || vehicle.status !== 'AVAILABLE') {
-      throw new BadRequestException('Vehicle is not available');
+    const vehicle = await this.prisma.vehicle.findUnique({
+      where: { id: dto.vehicleId },
+      select: { vehicleNo: true, status: true, currentDriverId: true },
+    });
+    if (!vehicle) throw new BadRequestException('Vehicle not found');
+    if (vehicle.status !== 'AVAILABLE') {
+      // Give a clearer message when the vehicle has an active fleet assignment
+      if (vehicle.currentDriverId) {
+        throw new BadRequestException(
+          `Vehicle ${vehicle.vehicleNo} is currently fleet-assigned to a driver (status: ${vehicle.status}). ` +
+          `Use the preferred-vehicle booking flow so the fleet-assigned driver handles this trip.`,
+        );
+      }
+      throw new BadRequestException(`Vehicle ${vehicle.vehicleNo} is not available (status: ${vehicle.status})`);
+    }
+
+    // Step 16/17: Cross-validate Fleet Master assignment (belt-and-suspenders when status is AVAILABLE
+    // but a currentDriverId was somehow left on the record).
+    if (vehicle.currentDriverId && vehicle.currentDriverId !== dto.driverId) {
+      const fleetDriver = await this.prisma.driverProfile.findUnique({
+        where: { id: vehicle.currentDriverId },
+        include: { user: { select: { name: true } } },
+      });
+      throw new ConflictException(
+        `Vehicle ${vehicle.vehicleNo} is fleet-assigned to ${fleetDriver?.user.name ?? 'another driver'}. ` +
+        `The booking assignment must use the fleet-assigned driver, or unassign them from the vehicle first.`,
+      );
     }
 
     // Validate driver exists and is shiftReady
-    const driver = await this.prisma.driverProfile.findUnique({ where: { id: dto.driverId } });
+    const driver = await this.prisma.driverProfile.findUnique({
+      where: { id: dto.driverId },
+      include: { assignedVehicle: { select: { id: true, vehicleNo: true } } },
+    });
     if (!driver || !driver.shiftReady) {
       throw new BadRequestException('Driver is not available or not shift-ready');
+    }
+    // Step 17: If driver has a fleet vehicle, this booking must use that same vehicle
+    if (driver.assignedVehicle && driver.assignedVehicle.id !== dto.vehicleId) {
+      throw new ConflictException(
+        `This driver is fleet-assigned to vehicle ${driver.assignedVehicle.vehicleNo}. ` +
+        `Booking must use their fleet-assigned vehicle, or unassign the driver from it first.`,
+      );
     }
 
     const assignment = await this.prisma.assignment.create({
@@ -218,7 +252,7 @@ export class AssignmentsService {
         assignment: null,
       },
       include: {
-        requester: { select: { id: true, name: true, email: true } },
+        requester: { select: { id: true, name: true, email: true, mobileNumber: true } },
         pickupPreset: { select: { id: true, name: true, address: true } },
         dropoffPreset: { select: { id: true, name: true, address: true } },
       },
@@ -278,10 +312,26 @@ export class AssignmentsService {
     }
 
     // Validate new vehicle is AVAILABLE (or same vehicle that was freed on decline)
-    const newVehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
+    const newVehicle = await this.prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+      select: { vehicleNo: true, status: true, currentDriverId: true },
+    });
     if (!newVehicle || newVehicle.status !== 'AVAILABLE') {
+      if (newVehicle?.currentDriverId) {
+        throw new BadRequestException(
+          `Vehicle ${newVehicle.vehicleNo} is fleet-assigned to a driver and cannot be reassigned this way.`,
+        );
+      }
       throw new BadRequestException('New vehicle is not available');
     }
+    // Step 16/17: fleet-level driver cross-check on the new vehicle
+    if (newVehicle.currentDriverId && newVehicle.currentDriverId !== driverId) {
+      throw new ConflictException(
+        `Vehicle ${newVehicle.vehicleNo} is fleet-assigned to a different driver. ` +
+        `Use the fleet-assigned driver or unassign them first.`,
+      );
+    }
+
     // Free the old vehicle if it differs (may already be AVAILABLE if driver declined)
     if (vehicleId !== assignment.vehicleId) {
       await this.prisma.vehicle.update({
@@ -297,9 +347,19 @@ export class AssignmentsService {
 
     // Validate new driver
     if (driverId !== assignment.driverId) {
-      const newDriver = await this.prisma.driverProfile.findUnique({ where: { id: driverId } });
+      const newDriver = await this.prisma.driverProfile.findUnique({
+        where: { id: driverId },
+        include: { assignedVehicle: { select: { id: true, vehicleNo: true } } },
+      });
       if (!newDriver || !newDriver.shiftReady) {
         throw new BadRequestException('New driver is not available or not shift-ready');
+      }
+      // Step 17: If the new driver has a fleet vehicle, it must match the booking vehicle
+      if (newDriver.assignedVehicle && newDriver.assignedVehicle.id !== vehicleId) {
+        throw new ConflictException(
+          `This driver is fleet-assigned to vehicle ${newDriver.assignedVehicle.vehicleNo}. ` +
+          `Reassignment must use their fleet-assigned vehicle or unassign them from it first.`,
+        );
       }
     }
 

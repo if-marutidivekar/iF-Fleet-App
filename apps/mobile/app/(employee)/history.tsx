@@ -6,7 +6,7 @@ import { Badge } from '../../components/Badge';
 import { C, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
 
 interface Booking {
-  id: string; status: string; transportType: string; requestedAt: string;
+  id: string; bookingNo: number; status: string; transportType: string; requestedAt: string;
   pickupLabel?: string; pickupCustomAddress?: string;
   dropoffLabel?: string; dropoffCustomAddress?: string;
   assignment?: { driver?: { user: { name: string } }; vehicle?: { vehicleNo: string }; trip?: { odometerStart?: number; odometerEnd?: number; actualEndAt?: string } };
@@ -57,7 +57,10 @@ export default function EmployeeHistory() {
           return (
             <View key={b.id} style={[s.card, b.status === 'COMPLETED' ? {} : { opacity: 0.7 }]}>
               <View style={s.cardRow}>
-                <Text style={s.transport}>{b.transportType.replace(/_/g, ' ')}</Text>
+                <View>
+                  <Text style={s.transport}>{b.transportType.replace(/_/g, ' ')}</Text>
+                  <Text style={s.bookingNo}>Req #{b.bookingNo}</Text>
+                </View>
                 <Badge label={STATUS_LABEL[b.status] ?? b.status} color={color} />
               </View>
               <Text style={s.route}>{pickup} → {dropoff}</Text>
@@ -86,6 +89,7 @@ const s = StyleSheet.create({
   card: { backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   transport: { fontSize: 13, fontWeight: '700', color: C.text },
+  bookingNo: { fontSize: 11, color: C.muted, marginTop: 1 },
   route: { fontSize: 13, fontWeight: '600', color: C.text, marginBottom: 4 },
   time: { fontSize: 12, color: C.light, marginBottom: 3 },
   meta: { fontSize: 12, color: C.muted, marginTop: 2 },

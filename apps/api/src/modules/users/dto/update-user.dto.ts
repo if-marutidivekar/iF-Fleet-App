@@ -3,15 +3,25 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole, UserStatus, DriverAuthMethod } from '@if-fleet/domain';
 
 export class UpdateUserDto {
-  @ApiPropertyOptional({ example: 'Jane Doe' })
+  @ApiPropertyOptional({ example: 'Jane' })
   @IsOptional()
   @IsString()
-  name?: string;
+  firstName?: string;
 
-  @ApiPropertyOptional({ example: '+91-9876543210' })
+  @ApiPropertyOptional({ example: 'Doe' })
   @IsOptional()
   @IsString()
-  phone?: string;
+  lastName?: string;
+
+  @ApiPropertyOptional({ example: 'Engineering' })
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @ApiPropertyOptional({ example: 'EMP-1042' })
+  @IsOptional()
+  @IsString()
+  employeeId?: string;
 
   @ApiPropertyOptional({ enum: UserStatus })
   @IsOptional()
@@ -22,11 +32,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
-
-  @ApiPropertyOptional({ example: 'EMP-1042' })
-  @IsOptional()
-  @IsString()
-  employeeId?: string;
 
   // ─── Driver-specific fields ───────────────────────────────────────────────
 

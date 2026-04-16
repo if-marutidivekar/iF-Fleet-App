@@ -32,7 +32,7 @@ export const STATUS_COLOR: Record<string, string> = {
 };
 
 export const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: 'Pending',
+  PENDING_APPROVAL: 'Pending Approval',
   APPROVED:         'Approved',
   ASSIGNED:         'Assigned',
   IN_TRIP:          'In Trip',
@@ -41,6 +41,16 @@ export const STATUS_LABEL: Record<string, string> = {
   CANCELLED:        'Cancelled',
   EXCEPTION:        'Exception',
   DRAFT:            'Draft',
+};
+
+export const TRIP_STATUS_LABEL: Record<string, string> = {
+  CREATED:     'Created',
+  STARTED:     'Started',
+  IN_PROGRESS: 'In Progress',
+  PAUSED:      'Paused',
+  COMPLETED:   'Completed',
+  CANCELLED:   'Cancelled',
+  EXCEPTION:   'Exception',
 };
 
 export const DECISION_COLOR: Record<string, string> = {

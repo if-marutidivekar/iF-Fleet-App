@@ -19,7 +19,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@if-fleet/domain';
 
 interface JwtUser {
-  sub: string;
+  id: string;
   email: string;
   role: UserRole;
 }
@@ -61,26 +61,26 @@ export class AssignmentsController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Admin assigns vehicle + driver to approved booking' })
   create(@Body() dto: CreateAssignmentDto, @CurrentUser() user: JwtUser) {
-    return this.assignmentsService.create(dto, user.sub);
+    return this.assignmentsService.create(dto, user.id);
   }
 
   @Get()
   @ApiOperation({ summary: 'List assignments (admin: all, driver: own)' })
   findAll(@CurrentUser() user: JwtUser) {
-    return this.assignmentsService.findAll(user.sub, user.role);
+    return this.assignmentsService.findAll(user.id, user.role);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get assignment by id' })
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.assignmentsService.findOne(id, user.sub, user.role);
+    return this.assignmentsService.findOne(id, user.id, user.role);
   }
 
   @Post(':id/accept')
   @Roles(UserRole.DRIVER)
   @ApiOperation({ summary: 'Driver accepts assignment' })
   accept(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.assignmentsService.accept(id, user.sub);
+    return this.assignmentsService.accept(id, user.id);
   }
 
   @Post(':id/decline')
@@ -91,7 +91,7 @@ export class AssignmentsController {
     @Body() dto: DeclineAssignmentDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.assignmentsService.decline(id, user.sub, dto.declineReason);
+    return this.assignmentsService.decline(id, user.id, dto.declineReason);
   }
 
   @Patch(':id/reassign')
@@ -102,7 +102,7 @@ export class AssignmentsController {
     @Body() dto: ReassignAssignmentDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.assignmentsService.reassign(id, dto.vehicleId, dto.driverId, user.sub);
+    return this.assignmentsService.reassign(id, dto.vehicleId, dto.driverId, user.id);
   }
 
   @Post(':id/driver-cancel')
@@ -113,7 +113,7 @@ export class AssignmentsController {
     @Body() dto: DriverCancelDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.assignmentsService.driverCancel(id, user.sub, dto.cancelReason);
+    return this.assignmentsService.driverCancel(id, user.id, dto.cancelReason);
   }
 
   @Get('available')
@@ -127,6 +127,6 @@ export class AssignmentsController {
   @Roles(UserRole.DRIVER)
   @ApiOperation({ summary: 'Driver self-assigns a booking (AUTO approval mode)' })
   selfAssign(@Body() dto: SelfAssignDto, @CurrentUser() user: JwtUser) {
-    return this.assignmentsService.selfAssign(dto.bookingId, dto.vehicleId, user.sub);
+    return this.assignmentsService.selfAssign(dto.bookingId, dto.vehicleId, user.id);
   }
 }

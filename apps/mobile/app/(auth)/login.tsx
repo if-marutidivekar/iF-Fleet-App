@@ -6,18 +6,31 @@ import {
 import { useRouter } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import { useAuthStore } from '../../stores/auth.store';
+import { useAuthStore, type AuthUser } from '../../stores/auth.store';
 import type { UserRole } from '@if-fleet/domain';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Tab = 'otp' | 'pin';
 type OtpStep = 'email' | 'otp';
-type PinStep = 'mobile' | 'pin' | 'change_pin';
+type PinStep = 'mobile' | 'pin';
+
+interface LoginUser {
+  id: string;
+  userCode?: number;
+  name: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email: string;
+  department?: string | null;
+  mobileNumber?: string | null;
+  role: UserRole;
+  profileCompleted: boolean;
+}
 
 // ─── OTP Login Flow ───────────────────────────────────────────────────────────
 
-function OtpFlow({ onSuccess }: { onSuccess: (user: object, token: string) => void }) {
+function OtpFlow({ onSuccess }: { onSuccess: (user: LoginUser, token: string, rt: string) => void }) {
   const [step, setStep] = useState<OtpStep>('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -34,12 +47,10 @@ function OtpFlow({ onSuccess }: { onSuccess: (user: object, token: string) => vo
 
   const verifyOtp = useMutation({
     mutationFn: ({ email: addr, otp: code }: { email: string; otp: string }) =>
-      api.post<{
-        accessToken: string;
-        refreshToken: string;
-        user: { id: string; name: string; email: string; role: UserRole };
-      }>('/auth/verify-otp', { email: addr, otp: code }),
-    onSuccess: ({ data }) => onSuccess(data.user, data.accessToken),
+      api.post<{ accessToken: string; refreshToken: string; user: LoginUser }>(
+        '/auth/verify-otp', { email: addr, otp: code },
+      ),
+    onSuccess: ({ data }) => onSuccess(data.user, data.accessToken, data.refreshToken),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg ?? 'Invalid or expired OTP. Please try again.');
@@ -105,7 +116,7 @@ function OtpFlow({ onSuccess }: { onSuccess: (user: object, token: string) => vo
 
 // ─── PIN Login Flow ───────────────────────────────────────────────────────────
 
-function PinFlow({ onSuccess }: { onSuccess: (user: object, token: string, pinMustChange: boolean) => void }) {
+function PinFlow({ onSuccess }: { onSuccess: (user: LoginUser, token: string, rt: string, pinMustChange: boolean) => void }) {
   const [step, setStep] = useState<PinStep>('mobile');
   const [mobile, setMobile] = useState('');
   const [pin, setPin] = useState('');
@@ -123,13 +134,10 @@ function PinFlow({ onSuccess }: { onSuccess: (user: object, token: string, pinMu
 
   const verifyPin = useMutation({
     mutationFn: ({ mobileNumber, pin: p }: { mobileNumber: string; pin: string }) =>
-      api.post<{
-        accessToken: string;
-        refreshToken: string;
-        pinMustChange: boolean;
-        user: { id: string; name: string; mobileNumber: string; role: UserRole };
-      }>('/auth/driver/verify-pin', { mobileNumber, pin: p }),
-    onSuccess: ({ data }) => onSuccess(data.user, data.accessToken, data.pinMustChange),
+      api.post<{ accessToken: string; refreshToken: string; pinMustChange: boolean; user: LoginUser }>(
+        '/auth/driver/verify-pin', { mobileNumber, pin: p },
+      ),
+    onSuccess: ({ data }) => onSuccess(data.user, data.accessToken, data.refreshToken, data.pinMustChange),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg ?? 'Invalid PIN. Please try again.');
@@ -217,10 +225,7 @@ function ChangePinScreen({ token, onDone }: { token: string; onDone: () => void 
   });
 
   const canSubmit =
-    currentPin.length === 6 &&
-    newPin.length === 6 &&
-    confirmPin.length === 6 &&
-    !changePin.isPending;
+    currentPin.length === 6 && newPin.length === 6 && confirmPin.length === 6 && !changePin.isPending;
 
   if (success) {
     return (
@@ -229,7 +234,7 @@ function ChangePinScreen({ token, onDone }: { token: string; onDone: () => void 
         <View style={styles.successBox}>
           <Text style={styles.successIcon}>✓</Text>
           <Text style={styles.successTitle}>PIN Changed</Text>
-          <Text style={styles.successMsg}>Your PIN has been updated successfully. You can now use your new PIN to log in.</Text>
+          <Text style={styles.successMsg}>Your PIN has been updated successfully.</Text>
         </View>
         <TouchableOpacity style={styles.btn} onPress={onDone}>
           <Text style={styles.btnText}>Continue to App</Text>
@@ -305,37 +310,52 @@ export default function LoginScreen() {
 
   const [tab, setTab] = useState<Tab>('otp');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [pendingUser, setPendingUser] = useState<object | null>(null);
+  const [pendingRefreshToken, setPendingRefreshToken] = useState<string | null>(null);
+  const [pendingUser, setPendingUser] = useState<LoginUser | null>(null);
 
-  // Called after OTP login succeeds — no PIN change needed for non-drivers
-  const handleOtpSuccess = (user: object, token: string) => {
-    const u = user as { id: string; name: string; email: string; role: UserRole };
-    setAuth(u, token);
-    router.replace('/');
+  const applyLogin = (user: LoginUser, token: string, rt: string) => {
+    const authUser: AuthUser = {
+      id: user.id,
+      userCode: user.userCode,
+      name: user.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      department: user.department,
+      mobileNumber: user.mobileNumber,
+      role: user.role,
+      profileCompleted: user.profileCompleted ?? false,
+    };
+    setAuth(authUser, token, rt);
   };
 
-  // Called after PIN verify — may require forced change
-  const handlePinSuccess = (user: object, token: string, pinMustChange: boolean) => {
+  // After OTP login
+  const handleOtpSuccess = (user: LoginUser, token: string, rt: string) => {
+    applyLogin(user, token, rt);
+    router.replace(user.profileCompleted ? '/' : '/(auth)/complete-profile');
+  };
+
+  // After PIN verify — may require forced change
+  const handlePinSuccess = (user: LoginUser, token: string, rt: string, pinMustChange: boolean) => {
     if (pinMustChange) {
       setPendingToken(token);
+      setPendingRefreshToken(rt);
       setPendingUser(user);
     } else {
-      const u = user as { id: string; name: string; email: string; role: UserRole };
-      setAuth(u, token);
-      router.replace('/');
+      applyLogin(user, token, rt);
+      router.replace(user.profileCompleted ? '/' : '/(auth)/complete-profile');
     }
   };
 
-  // Called after forced PIN change completes
+  // After forced PIN change completes
   const handlePinChanged = () => {
-    if (pendingUser && pendingToken) {
-      const u = pendingUser as { id: string; name: string; email: string; role: UserRole };
-      setAuth(u, pendingToken);
-      router.replace('/');
+    if (pendingUser && pendingToken && pendingRefreshToken) {
+      applyLogin(pendingUser, pendingToken, pendingRefreshToken);
+      router.replace(pendingUser.profileCompleted ? '/' : '/(auth)/complete-profile');
     }
   };
 
-  // Show forced PIN change screen instead of login
+  // Show forced PIN change screen
   if (pendingToken && pendingUser) {
     return (
       <KeyboardAvoidingView
@@ -362,17 +382,13 @@ export default function LoginScreen() {
             style={[styles.tabBtn, tab === 'otp' && styles.tabBtnActive]}
             onPress={() => setTab('otp')}
           >
-            <Text style={[styles.tabText, tab === 'otp' && styles.tabTextActive]}>
-              Email OTP
-            </Text>
+            <Text style={[styles.tabText, tab === 'otp' && styles.tabTextActive]}>Email OTP</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabBtn, tab === 'pin' && styles.tabBtnActive]}
             onPress={() => setTab('pin')}
           >
-            <Text style={[styles.tabText, tab === 'pin' && styles.tabTextActive]}>
-              Driver PIN
-            </Text>
+            <Text style={[styles.tabText, tab === 'pin' && styles.tabTextActive]}>Driver PIN</Text>
           </TouchableOpacity>
         </View>
 
@@ -409,10 +425,7 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#dc2626' },
 
   // Buttons
-  btn: {
-    backgroundColor: '#1d4ed8', borderRadius: 8,
-    padding: 14, alignItems: 'center', marginTop: 4,
-  },
+  btn: { backgroundColor: '#1d4ed8', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 4 },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
@@ -421,10 +434,7 @@ const styles = StyleSheet.create({
   back: { color: '#64748b', textAlign: 'center', marginTop: 14, fontSize: 14 },
 
   // Warning / Success
-  warningBox: {
-    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a',
-    borderRadius: 8, padding: 12, marginBottom: 16,
-  },
+  warningBox: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a', borderRadius: 8, padding: 12, marginBottom: 16 },
   warningText: { color: '#92400e', fontSize: 13, fontWeight: '600', textAlign: 'center' },
   successBox: { alignItems: 'center', marginBottom: 20 },
   successIcon: { fontSize: 40, color: '#059669', marginBottom: 8 },

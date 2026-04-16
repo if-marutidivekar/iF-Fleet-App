@@ -32,14 +32,26 @@ export class AuthService {
 
   async requestOtp(email: string): Promise<{ message: string }> {
     if (!email.toLowerCase().endsWith(`@${COMPANY_DOMAIN}`)) {
-      throw new BadRequestException(`Email must be a @${COMPANY_DOMAIN} address`);
+      throw new BadRequestException(
+        `Only @${COMPANY_DOMAIN} email addresses are allowed. Please use your company email to sign in.`,
+      );
     }
 
     // If the user already exists and is a DRIVER with MOBILE_PIN, reject early
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
+      if (existing.status === 'SUSPENDED') {
+        throw new UnauthorizedException(
+          'Your account has been suspended. Please contact your administrator for assistance.',
+        );
+      }
+      if (existing.status === 'INACTIVE') {
+        throw new UnauthorizedException(
+          'Your account is inactive. Please contact your administrator to reactivate it.',
+        );
+      }
       if (existing.status !== 'ACTIVE') {
-        throw new UnauthorizedException('Account is inactive or suspended');
+        throw new UnauthorizedException('Account is not active. Contact your administrator.');
       }
       if (existing.authMethod === 'MOBILE_PIN') {
         throw new BadRequestException(
@@ -103,8 +115,18 @@ export class AuthService {
         data: { email, name: autoName, employeeId: autoEmpId, role: 'EMPLOYEE', status: 'ACTIVE' },
       });
     } else {
+      if (user.status === 'SUSPENDED') {
+        throw new UnauthorizedException(
+          'Your account has been suspended. Please contact your administrator for assistance.',
+        );
+      }
+      if (user.status === 'INACTIVE') {
+        throw new UnauthorizedException(
+          'Your account is inactive. Please contact your administrator to reactivate it.',
+        );
+      }
       if (user.status !== 'ACTIVE') {
-        throw new UnauthorizedException('Account is inactive or suspended');
+        throw new UnauthorizedException('Account is not active. Contact your administrator.');
       }
       if (user.authMethod === 'MOBILE_PIN') {
         throw new BadRequestException(
@@ -118,10 +140,23 @@ export class AuthService {
     const accessToken = this.issueAccessToken(user.id, user.email, user.role);
     const refreshToken = await this.issueRefreshToken(user.id);
 
+    const profileCompleted = !!(user.firstName && user.lastName && user.employeeId && user.department && user.mobileNumber);
+
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        userCode: user.userCode,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        department: user.department,
+        mobileNumber: user.mobileNumber,
+        role: user.role,
+        profileCompleted,
+      },
     };
   }
 
@@ -137,8 +172,18 @@ export class AuthService {
       // Generic message — don't reveal whether number exists
       throw new UnauthorizedException('Mobile number not registered for PIN login');
     }
+    if (user.status === 'SUSPENDED') {
+      throw new UnauthorizedException(
+        'Your account has been suspended. Please contact your administrator for assistance.',
+      );
+    }
+    if (user.status === 'INACTIVE') {
+      throw new UnauthorizedException(
+        'Your account is inactive. Please contact your administrator to reactivate it.',
+      );
+    }
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Account is inactive or suspended');
+      throw new UnauthorizedException('Account is not active. Contact your administrator.');
     }
 
     return { message: 'Mobile number verified. Please enter your PIN.' };
@@ -161,8 +206,18 @@ export class AuthService {
     if (!user || user.role !== 'DRIVER' || user.authMethod !== 'MOBILE_PIN') {
       throw new UnauthorizedException('Invalid credentials');
     }
+    if (user.status === 'SUSPENDED') {
+      throw new UnauthorizedException(
+        'Your account has been suspended. Please contact your administrator for assistance.',
+      );
+    }
+    if (user.status === 'INACTIVE') {
+      throw new UnauthorizedException(
+        'Your account is inactive. Please contact your administrator to reactivate it.',
+      );
+    }
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Account is inactive or suspended');
+      throw new UnauthorizedException('Account is not active. Contact your administrator.');
     }
     if (!user.pinHash) {
       throw new UnauthorizedException('PIN not set. Contact your administrator.');
@@ -174,11 +229,24 @@ export class AuthService {
     const accessToken = this.issueAccessToken(user.id, user.email ?? '', user.role);
     const refreshToken = await this.issueRefreshToken(user.id);
 
+    const profileCompleted = !!(user.firstName && user.lastName && user.employeeId && user.department && user.mobileNumber);
+
     return {
       accessToken,
       refreshToken,
       pinMustChange: user.pinMustChange,
-      user: { id: user.id, name: user.name, mobileNumber: user.mobileNumber, role: user.role },
+      user: {
+        id: user.id,
+        userCode: user.userCode,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        department: user.department,
+        mobileNumber: user.mobileNumber,
+        role: user.role,
+        profileCompleted,
+      },
     };
   }
 
@@ -204,22 +272,13 @@ export class AuthService {
     const complexityError = validatePinComplexity(newPin);
     if (complexityError) throw new BadRequestException(complexityError);
 
-    const newPinHmac = this.computePinHmac(newPin);
-
-    // Uniqueness: reject if any other active MOBILE_PIN driver already uses this PIN
-    const duplicate = await this.prisma.user.findFirst({
-      where: {
-        pinHmac: newPinHmac,
-        role: 'DRIVER',
-        status: 'ACTIVE',
-        deletedAt: null,
-        NOT: { id: userId },
-      },
-    });
-    if (duplicate) {
-      throw new BadRequestException('This PIN is already in use by another driver. Choose a different PIN.');
+    // Ensure new PIN is different from the current PIN (same driver only)
+    const sameAsCurrent = await bcrypt.compare(newPin, user.pinHash);
+    if (sameAsCurrent) {
+      throw new BadRequestException('New PIN must be different from your current PIN.');
     }
 
+    const newPinHmac = this.computePinHmac(newPin);
     const newPinHash = await bcrypt.hash(newPin, 12);
 
     await this.prisma.user.update({

@@ -26,11 +26,14 @@ const EMPLOYEE_NAV: NavItem[] = [
   { label: 'New Booking', path: '/employee/book', icon: '➕' },
   { label: 'My Bookings', path: '/employee/history', icon: '📋' },
   { label: 'Trip Tracking', path: '/employee/trip', icon: '📍' },
+  { label: 'Profile', path: '/employee/profile', icon: '👤' },
 ];
 
 const DRIVER_NAV: NavItem[] = [
   { label: 'Dashboard', path: '/driver', icon: '🏠' },
+  { label: 'My Vehicle', path: '/driver/fleet', icon: '🚗' },
   { label: 'My Assignments', path: '/driver/assignments', icon: '📋' },
+  { label: 'Profile', path: '/driver/profile', icon: '👤' },
 ];
 
 function getRoleColor(role: UserRole): string {

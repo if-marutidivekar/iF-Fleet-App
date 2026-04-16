@@ -41,6 +41,14 @@ Set-Content $envFile $content -NoNewline
 Write-Host ".env updated: REACT_NATIVE_PACKAGER_HOSTNAME=$ip" -ForegroundColor Green
 
 # ── 3. Start Metro ─────────────────────────────────────────────────────────
-$args = if ($NoClear) { @() } else { @("--clear") }
+# EXPO_NO_DOCTOR=1 — skips the Expo CLI version-check network call that throws
+# "Body is unusable: Body has already been read" on Node 18+ when the Expo API
+# endpoint returns a non-JSON response (firewall / offline / Expo server issue).
+# This is purely a startup health-check; skipping it has no effect on bundling.
 Write-Host "Starting Expo Metro..." -ForegroundColor Cyan
-npx expo start @args
+$env:EXPO_NO_DOCTOR = "1"
+if ($NoClear) {
+  npx expo start
+} else {
+  npx expo start --clear
+}

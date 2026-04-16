@@ -14,6 +14,17 @@ interface Vehicle {
   capacity: number;
   ownership: string;
   status: string;
+  currentDriverId?: string | null;
+  currentDriverAssignedAt?: string | null;
+  currentDriver?: {
+    id: string;
+    currentLocationText?: string | null;
+    locationUpdatedAt?: string | null;
+    currentLocationPreset?: { id: string; name: string } | null;
+    user: { id: string; name: string; email: string; mobileNumber?: string | null };
+  } | null;
+  // Last booking assignment — used as location fallback (Step 12)
+  assignments?: Array<{ booking: { pickupLabel?: string | null } | null }>;
 }
 
 interface DriverProfile {
@@ -26,7 +37,7 @@ interface DriverProfile {
     name: string;
     email: string;
     employeeId: string;
-    phone?: string;
+    mobileNumber?: string;
   };
 }
 
@@ -100,6 +111,17 @@ const selectStyle: React.CSSProperties = {
 
 // ─── Vehicles Tab ─────────────────────────────────────────────────────────────
 
+/** Compute vehicle's effective current location for the Fleet Master table.
+ *  Priority: (1) driver's set location preset, (2) driver's free-text, (3) last booking pickup, (4) —
+ */
+function getVehicleCurrentLocation(v: Vehicle): string {
+  if (v.currentDriver?.currentLocationPreset?.name) return v.currentDriver.currentLocationPreset.name;
+  if (v.currentDriver?.currentLocationText) return v.currentDriver.currentLocationText;
+  const lastPickup = v.assignments?.[0]?.booking?.pickupLabel;
+  if (lastPickup) return lastPickup;
+  return '—';
+}
+
 const VEHICLE_TYPES = ['SEDAN', 'SUV', 'VAN', 'TRUCK', 'BUS'];
 const OWNERSHIP_TYPES = ['OWNED', 'LEASED', 'HIRED'];
 const VEHICLE_STATUSES = ['AVAILABLE', 'ASSIGNED', 'IN_TRIP', 'MAINTENANCE', 'INACTIVE'];
@@ -111,10 +133,42 @@ function VehiclesTab() {
   const [formError, setFormError] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ make: '', model: '', year: '', capacity: '', ownership: 'OWNED', status: 'AVAILABLE', type: 'SEDAN' });
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assignDriverProfileId, setAssignDriverProfileId] = useState('');
+  const [assignError, setAssignError] = useState('');
 
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({
     queryKey: ['fleet-vehicles'],
     queryFn: () => api.get<Vehicle[]>('/fleet/vehicles').then((r) => r.data),
+  });
+
+  const { data: drivers = [] } = useQuery<DriverProfile[]>({
+    queryKey: ['fleet-drivers'],
+    queryFn: () => api.get<DriverProfile[]>('/fleet/drivers').then((r) => r.data),
+  });
+
+  const assignDriverMutation = useMutation({
+    mutationFn: ({ vehicleId, driverProfileId }: { vehicleId: string; driverProfileId: string }) =>
+      api.patch(`/fleet/vehicles/${vehicleId}/assign-driver`, { driverProfileId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-vehicles'] });
+      setAssigningId(null);
+      setAssignDriverProfileId('');
+      setAssignError('');
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setAssignError(typeof msg === 'string' ? msg : 'Failed to assign driver');
+    },
+  });
+
+  const unassignDriverMutation = useMutation({
+    mutationFn: (vehicleId: string) => api.patch(`/fleet/vehicles/${vehicleId}/unassign-driver`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['fleet-vehicles'] }),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      alert(typeof msg === 'string' ? msg : 'Failed to unassign driver');
+    },
   });
 
   const createVehicle = useMutation({
@@ -220,7 +274,7 @@ function VehiclesTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
-                {['Vehicle No', 'Type', 'Make / Model', 'Capacity', 'Ownership', 'Status', 'Actions'].map((h) => (
+                {['Vehicle No', 'Type', 'Make / Model', 'Capacity', 'Ownership', 'Current Location', 'Status', 'Assigned Driver', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '0.625rem 0.875rem', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' }}>{h}</th>
                 ))}
               </tr>
@@ -228,23 +282,55 @@ function VehiclesTab() {
             <tbody>
               {vehicles.map((v, i) => (
                 <>
-                  <tr key={v.id} style={{ borderBottom: editId === v.id ? 'none' : (i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none') }}>
+                  <tr key={v.id} style={{ borderBottom: (editId === v.id || assigningId === v.id) ? 'none' : (i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none') }}>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{v.vehicleNo}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.type}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{v.capacity}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{v.ownership}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#374151', maxWidth: 180 }}>
+                      {getVehicleCurrentLocation(v) === '—'
+                        ? <span style={{ color: '#cbd5e1' }}>—</span>
+                        : <span title={getVehicleCurrentLocation(v)}>{getVehicleCurrentLocation(v)}</span>}
+                    </td>
                     <td style={{ padding: '0.625rem 0.875rem' }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: vehicleStatusColor[v.status] ?? '#64748b' }}>{v.status}</span>
                     </td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 13 }}>
+                      {v.currentDriver ? (
+                        <div style={{ fontWeight: 600, color: '#0f172a' }}>{v.currentDriver.user.name}</div>
+                      ) : (
+                        <span style={{ color: '#cbd5e1', fontSize: 12 }}>No driver</span>
+                      )}
+                    </td>
                     <td style={{ padding: '0.625rem 0.875rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
                       <button
-                        onClick={() => editId === v.id ? setEditId(null) : startEdit(v)}
+                        onClick={() => { editId === v.id ? setEditId(null) : startEdit(v); setAssigningId(null); }}
                         style={{ padding: '0.2rem 0.5rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                       >
                         {editId === v.id ? 'Cancel' : 'Edit'}
                       </button>
-                      {v.status === 'AVAILABLE' && (
+                      {!v.currentDriver ? (
+                        <button
+                          onClick={() => { setAssigningId(assigningId === v.id ? null : v.id); setAssignDriverProfileId(''); setAssignError(''); setEditId(null); }}
+                          style={{ padding: '0.2rem 0.5rem', background: '#f0fdf4', color: '#059669', border: '1px solid #bbf7d0', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {assigningId === v.id ? 'Cancel' : 'Assign Driver'}
+                        </button>
+                      ) : v.status === 'IN_TRIP' ? (
+                        <span title="Vehicle is on an active trip — cannot unassign now" style={{ padding: '0.2rem 0.5rem', background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'not-allowed' }}>
+                          In Trip
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => unassignDriverMutation.mutate(v.id)}
+                          disabled={unassignDriverMutation.isPending}
+                          style={{ padding: '0.2rem 0.5rem', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Unassign
+                        </button>
+                      )}
+                      {v.status === 'AVAILABLE' && !v.currentDriver && (
                         <button onClick={() => updateStatus.mutate({ id: v.id, status: 'MAINTENANCE' })} style={{ padding: '0.2rem 0.5rem', background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                           Maintenance
                         </button>
@@ -256,9 +342,51 @@ function VehiclesTab() {
                       )}
                     </td>
                   </tr>
+                  {assigningId === v.id && (
+                    <tr key={`${v.id}-assign`} style={{ borderBottom: i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f0fdf4' }}>
+                      <td colSpan={9} style={{ padding: '0.875rem 1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, minWidth: 240 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Select Shift-Ready Driver</span>
+                            <select
+                              value={assignDriverProfileId}
+                              onChange={(e) => { setAssignDriverProfileId(e.target.value); setAssignError(''); }}
+                              style={{ ...selectStyle, minWidth: 240 }}
+                            >
+                              <option value="">— Choose driver —</option>
+                              {drivers.filter((d) => d.shiftReady).map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.user.name} ({d.user.employeeId ?? d.user.email})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            onClick={() => assignDriverMutation.mutate({ vehicleId: v.id, driverProfileId: assignDriverProfileId })}
+                            disabled={!assignDriverProfileId || assignDriverMutation.isPending}
+                            style={{ padding: '0.4rem 1rem', background: '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: !assignDriverProfileId ? 0.5 : 1 }}
+                          >
+                            {assignDriverMutation.isPending ? 'Assigning…' : 'Confirm Assign'}
+                          </button>
+                          <button
+                            onClick={() => { setAssigningId(null); setAssignDriverProfileId(''); setAssignError(''); }}
+                            style={{ padding: '0.4rem 0.875rem', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {assignError && <p style={{ color: '#dc2626', fontSize: 12, marginTop: '0.4rem' }}>{assignError}</p>}
+                        {drivers.filter((d) => d.shiftReady).length === 0 && (
+                          <p style={{ color: '#64748b', fontSize: 12, marginTop: '0.4rem' }}>
+                            No shift-ready drivers available. Mark a driver as Ready in the Drivers tab first.
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
                   {editId === v.id && (
                     <tr key={`${v.id}-edit`} style={{ borderBottom: i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#f8fafc' }}>
-                      <td colSpan={7} style={{ padding: '0.875rem 1rem' }}>
+                      <td colSpan={9} style={{ padding: '0.875rem 1rem' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', alignItems: 'end' }}>
                           <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
                             <span style={{ fontWeight: 600, color: '#374151' }}>Make</span>
@@ -316,7 +444,7 @@ function VehiclesTab() {
                 </>
               ))}
               {vehicles.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No vehicles registered</td></tr>
+                <tr><td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No vehicles registered</td></tr>
               )}
             </tbody>
           </table>
@@ -475,7 +603,7 @@ function DriversTab() {
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{d.user.name}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{d.user.employeeId}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{d.user.email}</td>
-                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{d.user.phone ?? '—'}</td>
+                    <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{d.user.mobileNumber ?? '—'}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 13, color: '#374151' }}>{d.licenseNumber}</td>
                     <td style={{ padding: '0.625rem 0.875rem', fontSize: 12, color: '#64748b' }}>{new Date(d.licenseExpiry).toLocaleDateString()}</td>
                     <td style={{ padding: '0.625rem 0.875rem' }}>

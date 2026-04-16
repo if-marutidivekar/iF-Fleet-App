@@ -14,6 +14,7 @@ export class BookingsService {
 
   private bookingInclude = {
     requester: { select: { id: true, name: true, email: true, employeeId: true } },
+    // bookingNo is a scalar field — included automatically via findUnique/findMany
     approvedBy: { select: { id: true, name: true } },
     pickupPreset: { select: { id: true, name: true, address: true } },
     dropoffPreset: { select: { id: true, name: true, address: true } },
@@ -25,7 +26,7 @@ export class BookingsService {
             id: true,
             currentLocationText: true,
             currentLocationPreset: { select: { id: true, name: true } },
-            user: { select: { id: true, name: true, phone: true } },
+            user: { select: { id: true, name: true, mobileNumber: true } },
           },
         },
         trip: {
@@ -70,7 +71,7 @@ export class BookingsService {
     const approvalMode = await this.checkApprovalMode();
     const initialStatus = approvalMode === 'AUTO' ? 'APPROVED' : 'PENDING_APPROVAL';
 
-    return this.prisma.booking.create({
+    const booking = await this.prisma.booking.create({
       data: {
         requesterId,
         transportType: dto.transportType,
@@ -86,7 +87,75 @@ export class BookingsService {
         status: initialStatus,
         preferredVehicleId: dto.preferredVehicleId ?? null,
       },
+    });
+
+    // Always attempt to create a PENDING assignment when employee selected a preferred vehicle.
+    // In AUTO mode the booking is already APPROVED so the assignment goes straight to ASSIGNED.
+    // In MANUAL mode the booking is PENDING_APPROVAL; we still create the assignment so the
+    // driver gets notified immediately — admin approval will keep the assignment in place.
+    if (dto.preferredVehicleId) {
+      await this.tryAutoAssign(booking.id, dto.preferredVehicleId, requesterId);
+    }
+
+    return this.prisma.booking.findUnique({
+      where: { id: booking.id },
       include: this.bookingInclude,
+    });
+  }
+
+  private async tryAutoAssign(bookingId: string, vehicleId: string, requesterId: string) {
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, deletedAt: null },
+      include: {
+        currentDriver: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    if (!vehicle?.currentDriverId || !vehicle.currentDriver) return;
+
+    // Guard: don't create duplicate assignments
+    const existingAssignment = await this.prisma.assignment.findUnique({
+      where: { bookingId },
+    });
+    if (existingAssignment) return;
+
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) return;
+
+    // Create assignment — requesterId acts as assignedBy for employee-initiated auto-assigns
+    await this.prisma.assignment.create({
+      data: {
+        bookingId,
+        vehicleId: vehicle.id,
+        driverId: vehicle.currentDriverId,
+        assignedById: requesterId,
+        decision: 'PENDING',
+        assignedAt: new Date(),
+      },
+    });
+
+    // In AUTO mode the booking is already APPROVED — immediately elevate to ASSIGNED.
+    // In MANUAL mode the booking is PENDING_APPROVAL — keep it there so admin can approve/reject.
+    // When admin approves a booking that already has a pending assignment, the approve() method
+    // will detect the assignment and transition directly to ASSIGNED.
+    if (booking.status === 'APPROVED') {
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: { status: 'ASSIGNED' },
+      });
+    }
+
+    // Notify the driver in both modes
+    await this.prisma.notification.create({
+      data: {
+        recipientId: vehicle.currentDriver.user.id,
+        channel: 'IN_APP',
+        title: 'New Trip Assignment',
+        body: `A new booking has been assigned to your vehicle ${vehicle.vehicleNo}. Please accept or decline in the Home tab.`,
+        deliveryState: 'SENT',
+      },
     });
   }
 
@@ -117,16 +186,23 @@ export class BookingsService {
   }
 
   async approve(id: string, adminId: string) {
-    const booking = await this.prisma.booking.findUnique({ where: { id } });
+    const booking = await this.prisma.booking.findUnique({
+      where: { id },
+      include: { assignment: { select: { id: true } } },
+    });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'PENDING_APPROVAL') {
       throw new BadRequestException('Booking is not in PENDING_APPROVAL state');
     }
 
+    // If a preferred-vehicle assignment was already created while the booking was in
+    // PENDING_APPROVAL, jump straight to ASSIGNED rather than stopping at APPROVED.
+    const finalStatus = booking.assignment ? 'ASSIGNED' : 'APPROVED';
+
     return this.prisma.booking.update({
       where: { id },
       data: {
-        status: 'APPROVED',
+        status: finalStatus,
         approvedById: adminId,
         approvalNote: 'Approved',
       },

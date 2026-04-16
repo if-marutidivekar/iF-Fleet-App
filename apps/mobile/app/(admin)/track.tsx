@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../lib/api';
 import { Badge } from '../../components/Badge';
-import { C, TRIP_STATUS_COLOR } from '../../lib/theme';
+import { C, TRIP_STATUS_COLOR, TRIP_STATUS_LABEL } from '../../lib/theme';
 
 interface Trip {
   id: string;
@@ -80,7 +80,7 @@ function TripCard({ trip: t, dimmed = false }: { trip: Trip; dimmed?: boolean })
     <View style={[s.card, dimmed && { opacity: 0.65 }]}>
       <View style={s.cardRow}>
         <Text style={s.driver}>{t.assignment.driver.user.name}</Text>
-        <Badge label={t.status.replace(/_/g, ' ')} color={color} />
+        <Badge label={TRIP_STATUS_LABEL[t.status] ?? t.status.replace(/_/g, ' ')} color={color} />
       </View>
       <Text style={s.route}>{pickup} → {dropoff}</Text>
       <View style={s.metaRow}>

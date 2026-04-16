@@ -49,9 +49,16 @@ export class FleetController {
 
   // IMPORTANT: static paths must come before ':id' param routes
   @Get('vehicles/available-with-driver')
-  @ApiOperation({ summary: 'List vehicles that have an assigned & located driver (any auth)' })
-  listAvailableWithDriver() {
-    return this.fleetService.listAvailableWithDriver();
+  @ApiOperation({ summary: 'List vehicles that have an assigned & located driver (any auth); optionally ordered by pickupPresetId proximity' })
+  listAvailableWithDriver(@Query('pickupPresetId') pickupPresetId?: string) {
+    return this.fleetService.listAvailableWithDriver(pickupPresetId);
+  }
+
+  @Get('vehicles/available')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'List AVAILABLE vehicles with no driver assigned (driver self-assign)' })
+  listAvailableVehicles() {
+    return this.fleetService.listAvailableVehicles();
   }
 
   @Patch('vehicles/:id')
@@ -82,6 +89,16 @@ export class FleetController {
     return this.fleetService.unassignDriver(id, req.user.id, req.user.role);
   }
 
+  @Patch('vehicles/:id/self-assign')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'Driver self-assigns to an AVAILABLE vehicle' })
+  selfAssignVehicle(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.fleetService.selfAssignVehicle(id, req.user.id);
+  }
+
   // ── Driver Profiles ───────────────────────────────────────────────────────
 
   @Get('drivers')
@@ -98,7 +115,14 @@ export class FleetController {
     return this.fleetService.createDriver(dto);
   }
 
-  // IMPORTANT: 'my-location' must be declared BEFORE ':id' to avoid param conflict
+  // IMPORTANT: static paths must come before ':id' param routes
+  @Get('drivers/me')
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({ summary: 'Get current driver profile with assigned vehicle and location' })
+  getMyProfile(@Request() req: { user: { id: string } }) {
+    return this.fleetService.getMyDriverProfile(req.user.id);
+  }
+
   @Patch('drivers/my-location')
   @Roles(UserRole.DRIVER)
   @ApiOperation({ summary: 'Driver sets own current location (preset or free-text)' })

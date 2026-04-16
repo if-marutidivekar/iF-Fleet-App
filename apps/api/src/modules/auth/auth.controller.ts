@@ -50,8 +50,8 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Forced PIN change — required after admin set/reset (Driver)' })
-  changePin(@Request() req: { user: { sub: string } }, @Body() dto: ChangePinDto) {
-    return this.authService.changePin(req.user.sub, dto.currentPin, dto.newPin);
+  changePin(@Request() req: { user: { id: string } }, @Body() dto: ChangePinDto) {
+    return this.authService.changePin(req.user.id, dto.currentPin, dto.newPin);
   }
 
   // ─── Token management ────────────────────────────────────────────────────────
