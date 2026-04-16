@@ -5,16 +5,20 @@ import { Layout } from './components/Layout';
 
 // Auth pages
 import { LoginPage } from './pages/auth/LoginPage';
+import { CompleteProfilePage } from './pages/auth/CompleteProfilePage';
 
 // Employee pages
 import { EmployeeDashboard } from './pages/employee/EmployeeDashboard';
 import { NewBookingPage } from './pages/employee/NewBookingPage';
 import { BookingHistoryPage } from './pages/employee/BookingHistoryPage';
 import { TripTrackingPage } from './pages/employee/TripTrackingPage';
+import { EmployeeProfilePage } from './pages/employee/ProfilePage';
 
 // Driver pages
 import { DriverDashboard } from './pages/driver/DriverDashboard';
+import { DriverFleetPage } from './pages/driver/FleetPage';
 import { ActiveTripPage } from './pages/driver/ActiveTripPage';
+import { DriverProfilePage } from './pages/driver/ProfilePage';
 
 // Admin pages
 import { AdminDashboard } from './pages/admin/AdminDashboard';
@@ -29,6 +33,12 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: U
   const { user, isAuthenticated } = useAuthStore();
 
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
+
+  // Profile completion gate — applies to all roles
+  if (user && !user.profileCompleted) {
+    return <Navigate to="/complete-profile" replace />;
+  }
+
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return <Layout>{children}</Layout>;
@@ -37,6 +47,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: U
 function RoleHome() {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/login" replace />;
+  if (!user.profileCompleted) return <Navigate to="/complete-profile" replace />;
   if (user.role === UserRole.ADMIN) return <Navigate to="/admin" replace />;
   if (user.role === UserRole.DRIVER) return <Navigate to="/driver" replace />;
   return <Navigate to="/employee" replace />;
@@ -49,6 +60,9 @@ export function App() {
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
 
+        {/* Profile completion — requires auth but bypasses layout and profileCompleted check */}
+        <Route path="/complete-profile" element={<CompleteProfilePage />} />
+
         {/* Role home redirect */}
         <Route path="/" element={<RequireAuth><RoleHome /></RequireAuth>} />
 
@@ -57,11 +71,14 @@ export function App() {
         <Route path="/employee/book" element={<RequireAuth roles={[UserRole.EMPLOYEE, UserRole.ADMIN]}><NewBookingPage /></RequireAuth>} />
         <Route path="/employee/history" element={<RequireAuth roles={[UserRole.EMPLOYEE, UserRole.ADMIN]}><BookingHistoryPage /></RequireAuth>} />
         <Route path="/employee/trip/:tripId" element={<RequireAuth roles={[UserRole.EMPLOYEE, UserRole.ADMIN]}><TripTrackingPage /></RequireAuth>} />
+        <Route path="/employee/profile" element={<RequireAuth roles={[UserRole.EMPLOYEE, UserRole.ADMIN]}><EmployeeProfilePage /></RequireAuth>} />
 
         {/* Driver */}
         <Route path="/driver" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverDashboard /></RequireAuth>} />
+        <Route path="/driver/fleet" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverFleetPage /></RequireAuth>} />
         <Route path="/driver/trip/:tripId" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
         <Route path="/driver/assignments" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
+        <Route path="/driver/profile" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverProfilePage /></RequireAuth>} />
 
         {/* Admin */}
         <Route path="/admin" element={<RequireAuth roles={[UserRole.ADMIN]}><AdminDashboard /></RequireAuth>} />

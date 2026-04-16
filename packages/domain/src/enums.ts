@@ -12,6 +12,12 @@ export enum UserStatus {
   SUSPENDED = 'SUSPENDED',
 }
 
+/** Admin-controlled driver authentication method. Drivers cannot change their own. */
+export enum DriverAuthMethod {
+  EMAIL_OTP = 'EMAIL_OTP',
+  MOBILE_PIN = 'MOBILE_PIN',
+}
+
 // ─── Vehicle ──────────────────────────────────────────────────────────────────
 
 export enum VehicleStatus {
@@ -130,6 +136,9 @@ export enum AuditAction {
   DRIVER_CREATED = 'DRIVER_CREATED',
   DRIVER_UPDATED = 'DRIVER_UPDATED',
   DRIVER_DEACTIVATED = 'DRIVER_DEACTIVATED',
+  DRIVER_AUTH_METHOD_CHANGED = 'DRIVER_AUTH_METHOD_CHANGED',
+  DRIVER_PIN_SET = 'DRIVER_PIN_SET',
+  DRIVER_PIN_RESET = 'DRIVER_PIN_RESET',
   USER_LOGIN = 'USER_LOGIN',
   USER_SUSPENDED = 'USER_SUSPENDED',
 }

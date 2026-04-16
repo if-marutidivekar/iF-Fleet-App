@@ -15,7 +15,7 @@ import { TripsService } from '../trips/trips.service';
 import { LogLocationDto } from '../trips/dto/log-location.dto';
 
 interface JwtUser {
-  sub: string;
+  id: string;
   email: string;
   role: UserRole;
 }
@@ -35,6 +35,6 @@ export class TrackingController {
     @Body() dto: LogLocationDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.tripsService.logLocation(tripId, dto, user.sub);
+    return this.tripsService.logLocation(tripId, dto, user.id);
   }
 }

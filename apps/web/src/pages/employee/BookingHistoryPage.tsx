@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 
 interface Booking {
   id: string;
+  bookingNo: number;
   transportType: string;
   passengerCount?: number;
   materialDescription?: string;
@@ -18,7 +19,7 @@ interface Booking {
   requester: { id: string; name: string; email: string };
   assignment?: {
     vehicle: { vehicleNo: string; type: string; make?: string; model?: string };
-    driver: { user: { name: string; phone?: string } };
+    driver: { user: { name: string; mobileNumber?: string } };
     decision: string;
   } | null;
 }
@@ -120,10 +121,11 @@ export function BookingHistoryPage() {
             No bookings found.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 {[
+                  'Req #',
                   'Transport',
                   'Pickup → Dropoff',
                   'Requested Time',
@@ -162,6 +164,9 @@ export function BookingHistoryPage() {
                       background: '#fff',
                     }}
                   >
+                    <td style={{ padding: '14px 16px', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>
+                      #{b.bookingNo}
+                    </td>
                     <td style={{ padding: '14px 16px', fontSize: 14, color: '#0f172a', fontWeight: 600 }}>
                       {b.transportType}
                     </td>
@@ -192,8 +197,8 @@ export function BookingHistoryPage() {
                           <div style={{ color: '#64748b', fontSize: 12 }}>
                             {b.assignment.driver.user.name}
                           </div>
-                          {b.assignment.driver.user.phone && (
-                            <div style={{ color: '#2563eb', fontSize: 11 }}>📞 {b.assignment.driver.user.phone}</div>
+                          {b.assignment.driver.user.mobileNumber && (
+                            <div style={{ color: '#2563eb', fontSize: 11 }}>📞 {b.assignment.driver.user.mobileNumber}</div>
                           )}
                         </div>
                       ) : (

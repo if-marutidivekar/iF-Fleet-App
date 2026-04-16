@@ -58,4 +58,9 @@ export class CreateBookingDto {
   @ApiProperty({ example: '2025-08-15T09:00:00.000Z' })
   @IsDateString()
   requestedAt!: string;
+
+  @ApiPropertyOptional({ example: 'vehicle-uuid', description: "Employee's preferred vehicle from Available Vehicles screen" })
+  @IsOptional()
+  @IsString()
+  preferredVehicleId?: string;
 }

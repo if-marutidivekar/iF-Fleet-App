@@ -33,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException();
     }
 
-    return { sub: user.id, email: user.email, role: user.role };
+    // Return `id` (not `sub`) so every controller can use req.user.id consistently.
+    return { id: user.id, email: user.email, role: user.role };
   }
 }

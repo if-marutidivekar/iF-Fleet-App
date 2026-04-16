@@ -8,6 +8,7 @@ interface Assignment {
   assignedAt: string;
   decisionAt?: string;
   booking: {
+    bookingNo: number;
     transportType: string;
     pickupLabel?: string;
     pickupCustomAddress?: string;
@@ -18,6 +19,17 @@ interface Assignment {
   };
   vehicle: { vehicleNo: string; type: string; make?: string; model?: string; capacity: number };
   driver: { shiftReady: boolean; licenseNumber: string };
+}
+
+interface DriverProfile {
+  id: string;
+  currentLocationText?: string | null;
+  locationUpdatedAt?: string | null;
+  currentLocationPreset?: { id: string; name: string } | null;
+  assignedVehicle?: {
+    id: string; vehicleNo: string; type: string;
+    make?: string | null; model?: string | null;
+  } | null;
 }
 
 const DECISION_COLORS: Record<string, string> = {
@@ -56,6 +68,12 @@ export function DriverDashboard() {
       const res = await api.get('/assignments');
       return res.data;
     },
+  });
+
+  const { data: profile } = useQuery<DriverProfile>({
+    queryKey: ['my-driver-profile'],
+    queryFn: () => api.get<DriverProfile>('/fleet/drivers/me').then((r) => r.data),
+    retry: false,
   });
 
   const counts = {
@@ -108,6 +126,51 @@ export function DriverDashboard() {
           Go to My Assignments
         </button>
       </div>
+
+      {/* My Vehicle Banner */}
+      {profile !== undefined && (
+        <div
+          onClick={() => navigate('/driver/fleet')}
+          style={{
+            background: profile?.assignedVehicle ? '#eff6ff' : '#fffbeb',
+            border: `1.5px solid ${profile?.assignedVehicle ? '#bfdbfe' : '#fde68a'}`,
+            borderRadius: 12,
+            padding: '14px 20px',
+            marginBottom: 24,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{ fontSize: '1.75rem' }}>
+            {profile?.assignedVehicle ? '🚗' : '🚙'}
+          </span>
+          <div style={{ flex: 1 }}>
+            {profile?.assignedVehicle ? (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                  {profile.assignedVehicle.vehicleNo} &nbsp;·&nbsp;
+                  {profile.assignedVehicle.type.replace(/_/g, ' ')}
+                </div>
+                <div style={{ fontSize: 13, color: '#475569', marginTop: 2 }}>
+                  {profile.currentLocationPreset?.name ?? profile.currentLocationText ?? (
+                    <span style={{ color: '#d97706', fontWeight: 600 }}>⚠️ Location not set — click to update</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>No vehicle assigned</div>
+                <div style={{ fontSize: 13, color: '#92400e', marginTop: 2 }}>
+                  Click to view available vehicles →
+                </div>
+              </>
+            )}
+          </div>
+          <span style={{ fontSize: 20, color: '#94a3b8' }}>›</span>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 32 }}>
@@ -183,6 +246,9 @@ export function DriverDashboard() {
 
             {/* Route */}
             <div>
+              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 2 }}>
+                Req #{current.booking.bookingNo}
+              </div>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
                 {current.booking.transportType}
               </div>

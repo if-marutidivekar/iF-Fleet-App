@@ -19,7 +19,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@if-fleet/domain';
 
 interface JwtUser {
-  sub: string;
+  id: string;
   email: string;
   role: UserRole;
 }
@@ -39,7 +39,7 @@ export class TripsController {
     @Body() dto: StartTripDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.tripsService.startTrip(assignmentId, dto, user.sub);
+    return this.tripsService.startTrip(assignmentId, dto, user.id);
   }
 
   @Post(':id/complete')
@@ -49,19 +49,19 @@ export class TripsController {
     @Body() dto: CompleteTripDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.tripsService.completeTrip(id, dto, user.sub, user.role);
+    return this.tripsService.completeTrip(id, dto, user.id, user.role);
   }
 
   @Get()
   @ApiOperation({ summary: 'List trips (admin: all, driver: own)' })
   findAll(@CurrentUser() user: JwtUser) {
-    return this.tripsService.findAll(user.sub, user.role);
+    return this.tripsService.findAll(user.id, user.role);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Trip detail with location logs' })
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.tripsService.findOne(id, user.sub, user.role);
+    return this.tripsService.findOne(id, user.id, user.role);
   }
 
   @Post(':id/fuel')
@@ -72,6 +72,6 @@ export class TripsController {
     @Body() dto: AddFuelLogDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.tripsService.addFuelLog(id, dto, user.sub);
+    return this.tripsService.addFuelLog(id, dto, user.id);
   }
 }

@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
-import { useAuthStore } from '../stores/auth.store';
 import { registerForPushNotifications } from '../lib/notifications';
 
 const queryClient = new QueryClient({
@@ -12,37 +12,23 @@ const queryClient = new QueryClient({
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldSetBadge: false,
   }),
 });
 
-function AuthGuard() {
-  const segments = useSegments();
-  const router = useRouter();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
-
-  useEffect(() => {
-    const inAuthGroup = segments[0] === '(auth)';
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/');
-    }
-  }, [isAuthenticated, segments]);
-
-  return null;
-}
-
 export default function RootLayout() {
   useEffect(() => {
-    registerForPushNotifications();
+    registerForPushNotifications().catch(() => {});
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthGuard />
-      <Stack screenOptions={{ headerShown: false }} />
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }

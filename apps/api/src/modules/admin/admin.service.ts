@@ -1,12 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MailService, SmtpConfig } from '../mail/mail.service';
+import { validatePinComplexity } from '../../common/utils/pin.validator';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly authService: AuthService,
   ) {}
 
   async getSystemConfig(): Promise<{
@@ -70,5 +74,74 @@ export class AdminService {
       update: { value: String(minutes) },
       create: { key: 'auth.sessionTimeout', value: String(minutes) },
     });
+  }
+
+  // ─── Driver PIN management ───────────────────────────────────────────────────
+
+  /**
+   * Admin resets a MOBILE_PIN driver's PIN.
+   * - Validates the new PIN against complexity rules and uniqueness.
+   * - Sets pinMustChange = true so the driver is forced to change at next login.
+   * - Revokes all active sessions.
+   * - Creates an audit record.
+   */
+  async resetDriverPin(
+    driverId: string,
+    newPin: string,
+    actorId: string,
+  ): Promise<{ message: string }> {
+    const driver = await this.prisma.user.findFirst({
+      where: { id: driverId, role: 'DRIVER', deletedAt: null },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+    if (driver.authMethod !== 'MOBILE_PIN') {
+      throw new BadRequestException('PIN reset is only applicable to MOBILE_PIN drivers');
+    }
+
+    const complexityError = validatePinComplexity(newPin);
+    if (complexityError) throw new BadRequestException(complexityError);
+
+    const newPinHmac = this.authService.computePinHmac(newPin);
+    const duplicate = await this.prisma.user.findFirst({
+      where: {
+        pinHmac: newPinHmac,
+        role: 'DRIVER',
+        status: 'ACTIVE',
+        deletedAt: null,
+        NOT: { id: driverId },
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        'This PIN is already in use by another driver. Choose a different PIN.',
+      );
+    }
+
+    const newPinHash = await bcrypt.hash(newPin, 12);
+
+    await this.prisma.user.update({
+      where: { id: driverId },
+      data: { pinHash: newPinHash, pinHmac: newPinHmac, pinMustChange: true },
+    });
+
+    // Revoke all active sessions — driver must re-login with new PIN
+    await this.prisma.deviceSession.updateMany({
+      where: { userId: driverId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        action: 'DRIVER_PIN_RESET',
+        entityType: 'User',
+        entityId: driverId,
+        metadata: {
+          reason: 'Admin reset driver PIN; all sessions revoked; pinMustChange set',
+        },
+      },
+    });
+
+    return { message: 'Driver PIN reset successfully. Driver must change PIN at next login.' };
   }
 }

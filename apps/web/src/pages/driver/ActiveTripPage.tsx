@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
+interface Requester {
+  id: string;
+  name: string;
+  email: string;
+  mobileNumber?: string | null;
+}
+
 interface Assignment {
   id: string;
   decision: 'PENDING' | 'ACCEPTED' | 'DECLINED';
@@ -18,6 +25,7 @@ interface Assignment {
     dropoffCustomAddress?: string;
     requestedAt: string;
     status: string;
+    requester: Requester;
   };
   vehicle: { vehicleNo: string; type: string; make?: string; model?: string; capacity: number };
   driver: { shiftReady: boolean; licenseNumber: string };
@@ -54,6 +62,29 @@ const DECISION_COLORS: Record<string, string> = {
   DECLINED: '#dc2626',
 };
 
+function RequesterBox({ requester }: { requester: Requester }) {
+  return (
+    <div
+      style={{
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        borderRadius: 8,
+        padding: '10px 14px',
+        marginBottom: 12,
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+        👤 Requested by
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{requester.name}</div>
+      <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{requester.email}</div>
+      {requester.mobileNumber && (
+        <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>📞 {requester.mobileNumber}</div>
+      )}
+    </div>
+  );
+}
+
 function Badge({ label, color }: { label: string; color: string }) {
   return (
     <span
@@ -84,6 +115,10 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
   const [endKm, setEndKm] = useState('');
   const [endRemarks, setEndRemarks] = useState('');
   const [showEndForm, setShowEndForm] = useState(false);
+  const [showFuelForm, setShowFuelForm] = useState(false);
+  const [fuelVolume, setFuelVolume] = useState('');
+  const [fuelCost, setFuelCost] = useState('');
+  const [fuelOdometer, setFuelOdometer] = useState('');
 
   const acceptMutation = useMutation({
     mutationFn: () => api.post(`/assignments/${assignment.id}/accept`),
@@ -130,6 +165,21 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
     },
   });
 
+  const fuelLogMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/trips/${assignment.trip?.id}/fuel`, {
+        fuelVolume: parseFloat(fuelVolume),
+        ...(fuelCost ? { fuelCost: parseFloat(fuelCost) } : {}),
+        odometerAtRefuel: parseFloat(fuelOdometer),
+      }),
+    onSuccess: () => {
+      setShowFuelForm(false);
+      setFuelVolume('');
+      setFuelCost('');
+      setFuelOdometer('');
+    },
+  });
+
   const { booking, vehicle, decision } = assignment;
   const pickup = booking.pickupLabel || booking.pickupCustomAddress || '—';
   const dropoff = booking.dropoffLabel || booking.dropoffCustomAddress || '—';
@@ -161,6 +211,9 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
           Assigned: {new Date(assignment.assignedAt).toLocaleString()}
         </span>
       </div>
+
+      {/* Requester info */}
+      <RequesterBox requester={booking.requester} />
 
       {/* Transport + route */}
       <div>
@@ -442,6 +495,88 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
                   {endTripMutation.isError && (
                     <div style={{ color: '#dc2626', fontSize: 12 }}>Failed to end trip. Try again.</div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fuel Log (while trip is active) */}
+          {tripActive && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showFuelForm ? 12 : 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#1d4ed8' }}>⛽ Fuel Log</div>
+                <button
+                  onClick={() => setShowFuelForm((v) => !v)}
+                  style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {showFuelForm ? 'Cancel' : '+ Log Fuel'}
+                </button>
+              </div>
+              {showFuelForm && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8', display: 'block', marginBottom: 4 }}>
+                        Fuel volume (liters) *
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 30"
+                        value={fuelVolume}
+                        onChange={(e) => setFuelVolume(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8', display: 'block', marginBottom: 4 }}>
+                        Fuel cost (optional)
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 2400"
+                        value={fuelCost}
+                        onChange={(e) => setFuelCost(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8', display: 'block', marginBottom: 4 }}>
+                        Odometer at refuel *
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 54200"
+                        value={fuelOdometer}
+                        onChange={(e) => setFuelOdometer(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      onClick={() => fuelLogMutation.mutate()}
+                      disabled={fuelLogMutation.isPending || !fuelVolume || !fuelOdometer}
+                      style={{
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 7,
+                        padding: '8px 20px',
+                        fontWeight: 600,
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        opacity: !fuelVolume || !fuelOdometer ? 0.5 : 1,
+                      }}
+                    >
+                      {fuelLogMutation.isPending ? 'Saving...' : 'Log Fuel'}
+                    </button>
+                    {fuelLogMutation.isSuccess && (
+                      <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ Fuel logged!</span>
+                    )}
+                    {fuelLogMutation.isError && (
+                      <span style={{ fontSize: 12, color: '#dc2626' }}>Failed to log fuel. Try again.</span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
