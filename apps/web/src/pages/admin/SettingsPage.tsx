@@ -136,13 +136,22 @@ export function SettingsPage() {
   );
 
   return (
-    <div style={s.page}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}
 
-      <div style={s.header}>
-        <button onClick={() => navigate(-1)} style={s.back}>← Back</button>
-        <h1 style={s.title}>System Settings</h1>
+      {/* Page header — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 740, margin: '0 auto', padding: '1.5rem 2rem 0.75rem' }}>
+          <div style={s.header}>
+            <button onClick={() => navigate(-1)} style={s.back}>← Back</button>
+            <h1 style={s.title}>System Settings</h1>
+          </div>
+        </div>
       </div>
+
+      {/* Scrollable content */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 740, margin: '0 auto', padding: '0 2rem 2rem' }}>
 
       {cfg && !cfg.smtpConfigured && (
         <div style={s.notice}>
@@ -292,6 +301,9 @@ export function SettingsPage() {
           <strong>Gmail:</strong> Host <code>smtp.gmail.com</code> · Port <code>587</code> · Username = your Gmail · Password = <em>App Password</em> (myaccount.google.com → Security → App passwords)
         </div>
       </section>
+
+        </div>
+      </div>
     </div>
   );
 }

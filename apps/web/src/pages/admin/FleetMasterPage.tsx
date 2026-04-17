@@ -878,20 +878,35 @@ export function FleetMasterPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('vehicles');
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.25rem' }}>
-        Fleet Master Data
-      </h1>
-
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        <TabBtn label="Vehicles" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
-        <TabBtn label="Drivers" active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} />
-        <TabBtn label="Preset Locations" active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} />
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
+      {/* Page title — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1.5rem 0.75rem' }}>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Fleet Master Data
+          </h1>
+        </div>
       </div>
 
-      {activeTab === 'vehicles' && <VehiclesTab />}
-      {activeTab === 'drivers' && <DriversTab />}
-      {activeTab === 'locations' && <LocationsTab />}
+      {/* Tab bar — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <TabBtn label="Vehicles" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
+            <TabBtn label="Drivers" active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} />
+            <TabBtn label="Preset Locations" active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} />
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 1.5rem' }}>
+          {activeTab === 'vehicles' && <VehiclesTab />}
+          {activeTab === 'drivers' && <DriversTab />}
+          {activeTab === 'locations' && <LocationsTab />}
+        </div>
+      </div>
     </div>
   );
 }

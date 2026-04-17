@@ -623,18 +623,18 @@ export function BookingQueuePage() {
   );
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '32px 24px' }}>
-      {/* Page header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 24,
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
+      {/* Page header — fixed */}
+      <div style={{ flexShrink: 0, padding: '1.5rem 1.5rem 0.75rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
           Booking Queue
         </h1>
@@ -653,15 +653,16 @@ export function BookingQueuePage() {
         >
           + New Booking
         </button>
+        </div>
       </div>
 
-      {/* Tab filters */}
+      {/* Tab filters — fixed */}
+      <div style={{ flexShrink: 0, padding: '0 1.5rem 0.75rem' }}>
       <div
         style={{
           display: 'flex',
           gap: 4,
           flexWrap: 'wrap',
-          marginBottom: 16,
           background: '#fff',
           border: '1px solid #e2e8f0',
           borderRadius: 10,
@@ -711,8 +712,10 @@ export function BookingQueuePage() {
           );
         })}
       </div>
+      </div>
 
-      {/* Table */}
+      {/* Scrollable table area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 1.5rem 1.5rem' }}>
       <div
         style={{
           background: '#fff',
@@ -770,6 +773,7 @@ export function BookingQueuePage() {
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </div>
   );
