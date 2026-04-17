@@ -26,14 +26,16 @@ export class FleetService {
     return this.prisma.vehicle.findMany({
       where: { deletedAt: null },
       include: {
+        // Vehicle's own shared location fields (Step 31 — primary source of truth)
+        currentLocationPreset: { select: { id: true, name: true } },
         currentDriver: {
           include: {
             user: { select: { id: true, name: true, email: true, mobileNumber: true } },
-            // Include preset so the "Current Location" column can display the preset name
+            // Include driver preset as fallback display only
             currentLocationPreset: { select: { id: true, name: true } },
           },
         },
-        // Last booking assignment gives us a location fallback when no driver is set
+        // Last booking assignment — used only as a legacy fallback label in UI
         assignments: {
           orderBy: { assignedAt: 'desc' },
           take: 1,
@@ -88,6 +90,7 @@ export class FleetService {
         status: 'ASSIGNED',
       },
       include: {
+        currentLocationPreset: { select: { id: true, name: true } },
         currentDriver: {
           include: {
             user: { select: { id: true, name: true, email: true, mobileNumber: true } },
@@ -151,6 +154,8 @@ export class FleetService {
     });
   }
 
+  // ── Driver location (self-service) ────────────────────────────────────────
+
   async setDriverLocation(actorId: string, dto: SetLocationDto) {
     if (!dto.presetId && !dto.customAddress) {
       throw new BadRequestException('Either presetId or customAddress must be provided');
@@ -170,7 +175,7 @@ export class FleetService {
       locationText = preset.name;
     }
 
-    return this.prisma.driverProfile.update({
+    const updatedDriver = await this.prisma.driverProfile.update({
       where: { id: driverProfile.id },
       data: {
         currentLocationText: locationText,
@@ -182,24 +187,143 @@ export class FleetService {
         currentLocationPreset: { select: { id: true, name: true, address: true } },
       },
     });
+
+    // Step 31/33: Sync vehicle's shared location whenever driver updates their location.
+    // The vehicle is the single source of truth consumed by all views.
+    const vehicleWithDriver = await this.prisma.vehicle.findFirst({
+      where: { currentDriverId: driverProfile.id, deletedAt: null },
+    });
+    if (vehicleWithDriver) {
+      await this.prisma.vehicle.update({
+        where: { id: vehicleWithDriver.id },
+        data: {
+          currentLocationText: locationText,
+          currentLocationPresetId: presetId,
+          locationUpdatedAt: new Date(),
+        },
+      });
+    }
+
+    return updatedDriver;
   }
 
+  // ── Admin vehicle location (Step 32) ─────────────────────────────────────
+  // Admin may only set location when the vehicle is NOT assigned to any driver
+  // AND is NOT in ASSIGNED or IN_TRIP status.
+
+  async setVehicleAdminLocation(vehicleId: string, dto: SetLocationDto) {
+    if (!dto.presetId && !dto.customAddress) {
+      throw new BadRequestException('Either presetId or customAddress must be provided');
+    }
+
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, deletedAt: null },
+    });
+    if (!vehicle) throw new NotFoundException('Vehicle not found');
+
+    // Step 32: Enforce restrictions
+    if (vehicle.currentDriverId) {
+      throw new BadRequestException(
+        'Cannot manually set location on a vehicle that has a driver assigned. ' +
+        'Have the driver update their location from the Fleet tab instead.',
+      );
+    }
+    if (['ASSIGNED', 'IN_TRIP'].includes(vehicle.status)) {
+      throw new BadRequestException(
+        `Cannot set location on a vehicle with status ${vehicle.status}. ` +
+        'Location can only be set when the vehicle is unassigned.',
+      );
+    }
+
+    let locationText: string | null = dto.customAddress ?? null;
+    let presetId: string | null = dto.presetId ?? null;
+
+    if (dto.presetId) {
+      const preset = await this.prisma.presetLocation.findUnique({ where: { id: dto.presetId } });
+      if (!preset) throw new NotFoundException('Preset location not found');
+      locationText = preset.name;
+    }
+
+    return this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        currentLocationText: locationText,
+        currentLocationPresetId: presetId,
+        locationUpdatedAt: new Date(),
+      },
+      include: {
+        currentLocationPreset: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  // ── Vehicles for booking assignment (Step 37) ─────────────────────────────
+  // Returns vehicles valid for admin to assign/reassign to a booking:
+  //   • status is AVAILABLE or ASSIGNED
+  //   • if ASSIGNED: not already locked in another active booking assignment
+  //   • if pickupPresetId provided: vehicle location must match the pickup preset
+
+  async getVehiclesForBookingAssignment(pickupPresetId?: string) {
+    const where: Record<string, unknown> = {
+      deletedAt: null,
+      status: { in: ['AVAILABLE', 'ASSIGNED'] },
+    };
+
+    // Step 37: filter by pickup location when specified
+    if (pickupPresetId) {
+      where['currentLocationPresetId'] = pickupPresetId;
+    }
+
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: where as Parameters<typeof this.prisma.vehicle.findMany>[0]['where'],
+      include: {
+        currentLocationPreset: { select: { id: true, name: true } },
+        currentDriver: {
+          include: {
+            user: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { vehicleNo: 'asc' },
+    });
+
+    // For ASSIGNED vehicles, exclude those with an active conflicting booking assignment
+    const assignedIds = vehicles
+      .filter((v) => v.status === 'ASSIGNED')
+      .map((v) => v.id);
+
+    if (assignedIds.length === 0) return vehicles;
+
+    const conflicting = await this.prisma.assignment.findMany({
+      where: {
+        vehicleId: { in: assignedIds },
+        decision: { in: ['PENDING', 'ACCEPTED'] },
+        booking: { status: { in: ['ASSIGNED', 'IN_TRIP'] } },
+      },
+      select: { vehicleId: true },
+    });
+
+    const conflictSet = new Set(conflicting.map((a) => a.vehicleId));
+    return vehicles.filter((v) => !conflictSet.has(v.id));
+  }
+
+  // ── Available vehicles for employee booking (with driver) ─────────────────
+
   async listAvailableWithDriver(pickupPresetId?: string) {
-    // Step 13: Strict filter — when a pickup preset is given, return ONLY vehicles whose
-    // driver's current location preset exactly matches the pickup.  No match → empty list
-    // so the frontend shows "No Preference" as the safe default (Step 14).
-    // Without a pickup preset (custom address or step 3 entered before step 2), return
-    // all assigned-driver vehicles that have set their location.
+    // Step 31/33: Use vehicle's own location (currentLocationPresetId) as the single source of truth.
+    // When a pickup preset is given, only return vehicles whose own location preset exactly matches.
+    // Without a pickup preset, return all vehicles with a set location.
     return this.prisma.vehicle.findMany({
       where: {
         deletedAt: null,
         status: { not: 'IN_TRIP' },
         currentDriverId: { not: null },
-        currentDriver: pickupPresetId
-          ? { locationUpdatedAt: { not: null }, currentLocationPresetId: pickupPresetId }
-          : { locationUpdatedAt: { not: null } },
+        ...(pickupPresetId
+          ? { currentLocationPresetId: pickupPresetId }
+          : { locationUpdatedAt: { not: null } }),
       },
       include: {
+        currentLocationPreset: { select: { id: true, name: true, address: true } },
         currentDriver: {
           include: {
             user: { select: { id: true, name: true, mobileNumber: true } },
@@ -224,6 +348,9 @@ export class FleetService {
             id: true, vehicleNo: true, type: true,
             make: true, model: true, status: true,
             currentDriverAssignedAt: true,
+            currentLocationText: true,
+            currentLocationPreset: { select: { id: true, name: true } },
+            locationUpdatedAt: true,
           },
         },
       },
@@ -274,6 +401,7 @@ export class FleetService {
         status: 'ASSIGNED',
       },
       include: {
+        currentLocationPreset: { select: { id: true, name: true } },
         currentDriver: {
           include: {
             user: { select: { id: true, name: true, email: true, mobileNumber: true } },

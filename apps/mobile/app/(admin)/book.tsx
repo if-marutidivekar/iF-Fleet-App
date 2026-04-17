@@ -19,12 +19,24 @@ interface Booking {
   requester: { name: string; employeeId: string };
   pickupLabel?: string;
   pickupCustomAddress?: string;
+  pickupPresetId?: string | null;
   dropoffLabel?: string;
   dropoffCustomAddress?: string;
   assignment?: { id: string; vehicle: { vehicleNo: string }; driver: { user: { name: string } }; decision: string } | null;
 }
 
-interface Vehicle { id: string; vehicleNo: string; type: string; make?: string; model?: string; capacity: number; status: string; }
+// Step 37: Extended vehicle type from for-assignment endpoint
+interface Vehicle {
+  id: string;
+  vehicleNo: string;
+  type: string;
+  make?: string;
+  model?: string;
+  capacity: number;
+  status: string;
+  currentLocationText?: string | null;
+  currentLocationPreset?: { id: string; name: string } | null;
+}
 interface DriverProfile { id: string; licenseNumber: string; shiftReady: boolean; user: { name: string; employeeId: string }; }
 
 const TABS = [
@@ -48,11 +60,18 @@ export default function BookingQueueScreen() {
     refetchInterval: 20_000,
   });
 
-  const { data: vehicles = [] } = useQuery<Vehicle[]>({
-    queryKey: ['admin-vehicles'],
-    queryFn: () => api.get<Vehicle[]>('/fleet/vehicles').then(r => r.data),
-    enabled: activeTab === 'APPROVED',
-    staleTime: 30_000,
+  // Step 37: Fetch vehicles valid for assignment — AVAILABLE + non-conflicting ASSIGNED,
+  // filtered by the booking's pickup preset when an assign panel is open.
+  const assigningBooking = allBookings.find(b => b.id === assignId);
+  const assigningPickupPresetId = assigningBooking?.pickupPresetId ?? undefined;
+  const { data: assignableVehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: ['admin-vehicles-for-assignment', assigningPickupPresetId ?? 'none'],
+    queryFn: () => {
+      const params = assigningPickupPresetId ? `?pickupPresetId=${assigningPickupPresetId}` : '';
+      return api.get<Vehicle[]>(`/fleet/vehicles/for-assignment${params}`).then(r => r.data);
+    },
+    enabled: activeTab === 'APPROVED' && assignId !== null,
+    staleTime: 15_000,
   });
 
   const { data: drivers = [] } = useQuery<DriverProfile[]>({
@@ -66,7 +85,6 @@ export default function BookingQueueScreen() {
   const approved = allBookings.filter(b => b.status === 'APPROVED');
   const bookings = activeTab === 'PENDING_APPROVAL' ? pending : approved;
 
-  const availableVehicles = vehicles.filter(v => v.status === 'AVAILABLE');
   const shiftReadyDrivers = drivers.filter(d => d.shiftReady);
 
   const approveMutation = useMutation({
@@ -284,20 +302,24 @@ export default function BookingQueueScreen() {
                     <Text style={s.assignLabel}>Assign vehicle & driver</Text>
 
                     <Text style={s.fieldLabel}>Vehicle</Text>
-                    {availableVehicles.length === 0 ? (
-                      <Text style={s.noOptions}>No available vehicles</Text>
+                    {assignableVehicles.length === 0 ? (
+                      <Text style={s.noOptions}>No vehicles available at this pickup location</Text>
                     ) : (
-                      availableVehicles.map(v => (
-                        <TouchableOpacity
-                          key={v.id}
-                          style={[s.optionRow, selectedVehicle === v.id && s.optionSelected]}
-                          onPress={() => setSelectedVehicle(v.id)}
-                        >
-                          <Text style={[s.optionText, selectedVehicle === v.id && { color: C.primary }]}>
-                            {v.vehicleNo} — {v.type}{v.make ? ` ${v.make}` : ''} (cap: {v.capacity})
-                          </Text>
-                        </TouchableOpacity>
-                      ))
+                      assignableVehicles.map(v => {
+                        const loc = v.currentLocationPreset?.name ?? v.currentLocationText;
+                        return (
+                          <TouchableOpacity
+                            key={v.id}
+                            style={[s.optionRow, selectedVehicle === v.id && s.optionSelected]}
+                            onPress={() => setSelectedVehicle(v.id)}
+                          >
+                            <Text style={[s.optionText, selectedVehicle === v.id && { color: C.primary }]}>
+                              {v.vehicleNo} — {v.type}{v.make ? ` ${v.make}` : ''} (cap: {v.capacity})
+                            </Text>
+                            {loc ? <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>📍 {loc}</Text> : null}
+                          </TouchableOpacity>
+                        );
+                      })
                     )}
 
                     <Text style={[s.fieldLabel, { marginTop: 10 }]}>Driver</Text>

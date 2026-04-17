@@ -68,6 +68,12 @@ export class BookingsService {
       dropoffLabel = dto.dropoffCustomAddress;
     }
 
+    // Step 38: Reject past date/time. Allow a 60-second grace window for clock skew.
+    const requestedAt = new Date(dto.requestedAt);
+    if (requestedAt.getTime() < Date.now() - 60_000) {
+      throw new BadRequestException('Booking date/time cannot be in the past. Please select a future date and time.');
+    }
+
     const approvalMode = await this.checkApprovalMode();
     const initialStatus = approvalMode === 'AUTO' ? 'APPROVED' : 'PENDING_APPROVAL';
 
@@ -244,12 +250,21 @@ export class BookingsService {
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
 
-    // Free the vehicle when cancelling an ASSIGNED booking
+    // Step 36: When cancelling an ASSIGNED booking, only revert vehicle to AVAILABLE
+    // if it has no fleet-level driver assignment. If a fleet driver owns the vehicle,
+    // keep it ASSIGNED — the fleet assignment persists across booking lifecycle events.
     if (booking.status === 'ASSIGNED' && booking.assignment) {
-      await this.prisma.vehicle.update({
+      const vehicle = await this.prisma.vehicle.findUnique({
         where: { id: booking.assignment.vehicleId },
-        data: { status: 'AVAILABLE' },
+        select: { currentDriverId: true },
       });
+      if (!vehicle?.currentDriverId) {
+        await this.prisma.vehicle.update({
+          where: { id: booking.assignment.vehicleId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
+      // If vehicle has a fleet driver → leave status ASSIGNED
     }
 
     return this.prisma.booking.update({

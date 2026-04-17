@@ -232,12 +232,20 @@ export class AssignmentsService {
       throw new BadRequestException('Assignment decision already made');
     }
 
-    // Free the vehicle — booking stays ASSIGNED so admin can Reassign.
-    // UI derives "ASSIGNED–DECLINED" from booking.status + assignment.decision.
-    await this.prisma.vehicle.update({
+    // Step 36: Only revert vehicle to AVAILABLE if it has no fleet-level driver.
+    // If a fleet driver owns the vehicle, keep it ASSIGNED — the fleet assignment persists
+    // independently of booking lifecycle.
+    const vehicleForDecline = await this.prisma.vehicle.findUnique({
       where: { id: assignment.vehicleId },
-      data: { status: 'AVAILABLE' },
+      select: { currentDriverId: true },
     });
+    if (!vehicleForDecline?.currentDriverId) {
+      await this.prisma.vehicle.update({
+        where: { id: assignment.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+    // If vehicle still has a fleet driver → leave status as ASSIGNED
 
     return this.prisma.assignment.update({
       where: { id },
@@ -266,12 +274,19 @@ export class AssignmentsService {
       throw new BadRequestException('Booking is not in a cancellable state');
     }
 
-    // Free the vehicle — booking stays ASSIGNED so admin can Reassign.
-    // UI derives "ASSIGNED–DECLINED" from booking.status + assignment.decision.
-    await this.prisma.vehicle.update({
+    // Step 36: Only revert vehicle to AVAILABLE if it has no fleet-level driver.
+    // Fleet assignment must persist independently of booking cancellation.
+    const vehicleForCancel = await this.prisma.vehicle.findUnique({
       where: { id: assignment.vehicleId },
-      data: { status: 'AVAILABLE' },
+      select: { currentDriverId: true },
     });
+    if (!vehicleForCancel?.currentDriverId) {
+      await this.prisma.vehicle.update({
+        where: { id: assignment.vehicleId },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+    // If vehicle still has a fleet driver → leave status as ASSIGNED
 
     return this.prisma.assignment.update({
       where: { id },
@@ -350,33 +365,57 @@ export class AssignmentsService {
       throw new BadRequestException('Can only reassign ASSIGNED bookings');
     }
 
-    // Validate new vehicle is AVAILABLE (or same vehicle that was freed on decline)
+    // Step 37: Validate new vehicle — AVAILABLE or ASSIGNED-non-conflicting are both acceptable.
     const newVehicle = await this.prisma.vehicle.findUnique({
       where: { id: vehicleId },
       select: { vehicleNo: true, status: true, currentDriverId: true },
     });
-    if (!newVehicle || newVehicle.status !== 'AVAILABLE') {
-      if (newVehicle?.currentDriverId) {
-        throw new BadRequestException(
-          `Vehicle ${newVehicle.vehicleNo} is fleet-assigned to a driver and cannot be reassigned this way.`,
+    if (!newVehicle) throw new NotFoundException('New vehicle not found');
+    if (newVehicle.status === 'IN_TRIP') {
+      throw new BadRequestException(`Vehicle ${newVehicle.vehicleNo} is currently on an active trip.`);
+    }
+    if (['MAINTENANCE', 'INACTIVE'].includes(newVehicle.status)) {
+      throw new BadRequestException(`Vehicle ${newVehicle.vehicleNo} is not available (status: ${newVehicle.status}).`);
+    }
+    if (newVehicle.status === 'ASSIGNED') {
+      // Fleet driver cross-check
+      if (newVehicle.currentDriverId && newVehicle.currentDriverId !== driverId) {
+        throw new ConflictException(
+          `Vehicle ${newVehicle.vehicleNo} is fleet-assigned to a different driver. ` +
+          `Use the fleet-assigned driver or unassign them first.`,
         );
       }
-      throw new BadRequestException('New vehicle is not available');
-    }
-    // Step 16/17: fleet-level driver cross-check on the new vehicle
-    if (newVehicle.currentDriverId && newVehicle.currentDriverId !== driverId) {
-      throw new ConflictException(
-        `Vehicle ${newVehicle.vehicleNo} is fleet-assigned to a different driver. ` +
-        `Use the fleet-assigned driver or unassign them first.`,
-      );
+      // Check for active conflicting booking (exclude the current assignment being reassigned)
+      if (!newVehicle.currentDriverId) {
+        const conflicting = await this.prisma.assignment.findFirst({
+          where: {
+            vehicleId,
+            id: { not: id },
+            decision: { in: ['PENDING', 'ACCEPTED'] },
+            booking: { status: { in: ['ASSIGNED', 'IN_TRIP'] } },
+          },
+          include: { booking: { select: { bookingNo: true } } },
+        });
+        if (conflicting) {
+          throw new BadRequestException(
+            `Vehicle ${newVehicle.vehicleNo} is already assigned to active booking #${conflicting.booking.bookingNo}.`,
+          );
+        }
+      }
     }
 
-    // Free the old vehicle if it differs (may already be AVAILABLE if driver declined)
+    // Free the old vehicle if it differs — only revert to AVAILABLE if no fleet driver
     if (vehicleId !== assignment.vehicleId) {
-      await this.prisma.vehicle.update({
+      const oldVehicle = await this.prisma.vehicle.findUnique({
         where: { id: assignment.vehicleId },
-        data: { status: 'AVAILABLE' },
+        select: { currentDriverId: true },
       });
+      if (!oldVehicle?.currentDriverId) {
+        await this.prisma.vehicle.update({
+          where: { id: assignment.vehicleId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
     }
     // Always mark the chosen vehicle as ASSIGNED
     await this.prisma.vehicle.update({

@@ -54,11 +54,28 @@ export class FleetController {
     return this.fleetService.listAvailableWithDriver(pickupPresetId);
   }
 
+  @Get('vehicles/for-assignment')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'List vehicles valid for admin booking assignment — AVAILABLE + non-conflicting ASSIGNED, optionally location-filtered (Step 37)' })
+  getVehiclesForAssignment(@Query('pickupPresetId') pickupPresetId?: string) {
+    return this.fleetService.getVehiclesForBookingAssignment(pickupPresetId);
+  }
+
   @Get('vehicles/available')
   @Roles(UserRole.DRIVER)
   @ApiOperation({ summary: 'List AVAILABLE vehicles with no driver assigned (driver self-assign)' })
   listAvailableVehicles() {
     return this.fleetService.listAvailableVehicles();
+  }
+
+  @Patch('vehicles/:id/location')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Admin sets vehicle location manually — only allowed when vehicle is unassigned and not ASSIGNED/IN_TRIP (Step 32)' })
+  setVehicleLocation(
+    @Param('id') id: string,
+    @Body() dto: SetLocationDto,
+  ) {
+    return this.fleetService.setVehicleAdminLocation(id, dto);
   }
 
   @Patch('vehicles/:id')
