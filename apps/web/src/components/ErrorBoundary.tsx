@@ -66,9 +66,9 @@ export class ErrorBoundary extends Component<Props, State> {
                 wordBreak: 'break-word',
               }}
             >
-              {this.state.error.message}
-              {'\n\n'}
-              {this.state.error.stack}
+              {import.meta.env.DEV
+                ? (this.state.error.stack ?? this.state.error.message)
+                : this.state.error.message}
             </pre>
             <button
               onClick={() => window.location.reload()}

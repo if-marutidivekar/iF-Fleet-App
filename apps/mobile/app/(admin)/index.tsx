@@ -1,4 +1,4 @@
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,9 +55,12 @@ export default function AdminDashboard() {
     >
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 16 }]}>
-        <View>
-          <Text style={s.greeting}>Welcome back,</Text>
-          <Text style={s.name}>{user?.name ?? 'Admin'}</Text>
+        <View style={s.headerBrand}>
+          <Image source={require('../../assets/logo.png')} style={s.headerLogo} resizeMode="contain" />
+          <View>
+            <Text style={s.greeting}>Welcome back,</Text>
+            <Text style={s.name}>{user?.name ?? 'Admin'}</Text>
+          </View>
         </View>
         <View style={s.roleBadge}><Text style={s.roleText}>ADMIN</Text></View>
       </View>
@@ -156,7 +159,9 @@ function StatCard({ label, value, color, emoji }: { label: string; value: number
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  header: { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border },
+  header:      { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLogo:  { width: 32, height: 32 },
   greeting: { fontSize: 13, color: C.muted },
   name: { fontSize: 20, fontWeight: '800', color: C.text },
   roleBadge: { backgroundColor: C.purpleLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },

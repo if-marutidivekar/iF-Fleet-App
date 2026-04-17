@@ -208,6 +208,13 @@ model Vehicle {
   currentDriver            DriverProfile? @relation("FleetDriverVehicle", fields: [currentDriverId], references: [id])
   currentDriverAssignedAt  DateTime?
 
+  // Shared vehicle current location — updated from all valid sources:
+  // driver location update, trip start (pickup), trip end (dropoff), admin manual set (when unassigned)
+  currentLocationText     String?         // resolved display text (preset name or free-text)
+  currentLocationPresetId String?         // FK → PresetLocation.id (when location is a preset)
+  currentLocationPreset   PresetLocation? @relation("VehicleCurrentLocation", fields: [currentLocationPresetId], references: [id])
+  locationUpdatedAt       DateTime?       // timestamp of last location update
+
   assignments       Assignment[]
   fuelLogs          FuelLog[]
   preferredInBookings Booking[] @relation("PreferredVehicleBookings") // back-relation
@@ -229,6 +236,7 @@ model PresetLocation {
   pickupBookings  Booking[]       @relation("PickupPreset")
   dropoffBookings Booking[]       @relation("DropoffPreset")
   driverLocations DriverProfile[] @relation("DriverCurrentLocation") // back-relation
+  vehicleLocations Vehicle[]      @relation("VehicleCurrentLocation") // back-relation
 
   @@map("preset_locations")
 }

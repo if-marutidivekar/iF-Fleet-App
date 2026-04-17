@@ -52,15 +52,22 @@ export default function ActiveTripScreen() {
   const activeTrip = trips.find(t => ['CREATED', 'STARTED', 'IN_PROGRESS'].includes(t.status));
 
   const startTrip = useMutation({
-    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer: number }) =>
-      api.post(`/trips/${assignmentId}/start`, { odometerStart: odometer }),
+    // Step 34: odometerStart is optional — only include if a valid number was entered
+    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer?: number }) =>
+      api.post(`/trips/${assignmentId}/start`, {
+        ...(odometer !== undefined ? { odometerStart: odometer } : {}),
+      }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['driver-trips'] }); void qc.invalidateQueries({ queryKey: ['driver-assignments'] }); },
     onError: () => Alert.alert('Error', 'Could not start trip. Please try again.'),
   });
 
   const completeTrip = useMutation({
-    mutationFn: ({ id, odometer, note }: { id: string; odometer: number; note: string }) =>
-      api.post(`/trips/${id}/complete`, { odometerEnd: odometer, remarks: note }),
+    // Step 34: odometerEnd is optional — only include if a valid number was entered
+    mutationFn: ({ id, odometer, note }: { id: string; odometer?: number; note: string }) =>
+      api.post(`/trips/${id}/complete`, {
+        ...(odometer !== undefined ? { odometerEnd: odometer } : {}),
+        remarks: note,
+      }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['driver-trips'] }); void qc.invalidateQueries({ queryKey: ['driver-assignments'] }); },
     onError: () => Alert.alert('Error', 'Could not complete trip. Please try again.'),
   });
@@ -72,26 +79,31 @@ export default function ActiveTripScreen() {
   });
 
   const handleStart = () => {
-    if (!odometerStart || isNaN(Number(odometerStart))) {
-      Alert.alert('Required', 'Please enter the current odometer reading.');
+    if (!activeTrip) return;
+    // Step 34: Odometer is optional — validate only if a value was entered
+    if (odometerStart && isNaN(Number(odometerStart))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!activeTrip) return;
-    Alert.alert('Start Trip', `Starting trip with odometer at ${odometerStart} km. Confirm?`, [
+    const odo = odometerStart && !isNaN(Number(odometerStart)) ? Number(odometerStart) : undefined;
+    const msg = odo !== undefined ? `Starting trip — odometer at ${odo} km. Confirm?` : 'Starting trip (no odometer reading entered). Confirm?';
+    Alert.alert('Start Trip', msg, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Start', onPress: () => startTrip.mutate({ assignmentId: activeTrip.assignment.id, odometer: Number(odometerStart) }) },
+      { text: 'Start', onPress: () => startTrip.mutate({ assignmentId: activeTrip.assignment.id, odometer: odo }) },
     ]);
   };
 
   const handleComplete = () => {
-    if (!odometerEnd || isNaN(Number(odometerEnd))) {
-      Alert.alert('Required', 'Please enter the ending odometer reading.');
+    if (!activeTrip) return;
+    // Step 34: Odometer is optional — validate only if a value was entered
+    if (odometerEnd && isNaN(Number(odometerEnd))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!activeTrip) return;
+    const odo = odometerEnd && !isNaN(Number(odometerEnd)) ? Number(odometerEnd) : undefined;
     Alert.alert('Complete Trip', 'Mark this trip as completed?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: Number(odometerEnd), note: remarks }) },
+      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: odo, note: remarks }) },
     ]);
   };
 
@@ -161,7 +173,7 @@ export default function ActiveTripScreen() {
       {!isStarted && (
         <View style={s.card}>
           <Text style={s.cardTitle}>Start Trip</Text>
-          <Text style={s.inputLabel}>Odometer reading (km) *</Text>
+          <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
           <TextInput
             style={s.input}
             value={odometerStart}
@@ -182,7 +194,7 @@ export default function ActiveTripScreen() {
       {isStarted && (
         <View style={s.card}>
           <Text style={s.cardTitle}>Complete Trip</Text>
-          <Text style={s.inputLabel}>Ending odometer (km) *</Text>
+          <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
           <TextInput style={s.input} value={odometerEnd} onChangeText={setOdometerEnd} placeholder="e.g. 12680" keyboardType="numeric" placeholderTextColor={C.light} />
           <Text style={s.inputLabel}>Remarks (optional)</Text>
           <TextInput style={[s.input, s.multiline]} value={remarks} onChangeText={setRemarks} placeholder="Any notes about the trip..." multiline numberOfLines={3} placeholderTextColor={C.light} />
@@ -205,11 +217,11 @@ export default function ActiveTripScreen() {
           </View>
           {showFuelForm && (
             <>
-              <Text style={s.inputLabel}>Fuel Volume (litres) *</Text>
+              <Text style={s.inputLabel}>Fuel Volume (litres)</Text>
               <TextInput style={s.input} value={fuelVolume} onChangeText={setFuelVolume} placeholder="e.g. 35" keyboardType="numeric" placeholderTextColor={C.light} />
-              <Text style={s.inputLabel}>Fuel Cost (₹)</Text>
+              <Text style={s.inputLabel}>Fuel Cost (₹) — optional</Text>
               <TextInput style={s.input} value={fuelCost} onChangeText={setFuelCost} placeholder="e.g. 2800" keyboardType="numeric" placeholderTextColor={C.light} />
-              <Text style={s.inputLabel}>Odometer at refuel (km) *</Text>
+              <Text style={s.inputLabel}>Odometer Reading (km) at refuel</Text>
               <TextInput style={s.input} value={fuelOdometer} onChangeText={setFuelOdometer} placeholder="e.g. 12550" keyboardType="numeric" placeholderTextColor={C.light} />
               <TouchableOpacity style={[s.warningBtn, addFuel.isPending && s.btnDisabled]} onPress={handleFuelLog} disabled={addFuel.isPending}>
                 {addFuel.isPending

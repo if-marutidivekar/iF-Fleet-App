@@ -169,20 +169,24 @@ pnpm dev
 
 ### Booking Flow (4 Steps — Employee Mobile)
 1. **Transport Type** — Person, Person + Material, or Material Only
-2. **Pickup, Drop & Time** — Preset locations or custom address; date/time with quick shortcuts (+1h, +2h, +4h, +8h)
+2. **Pickup, Drop & Time** — Preset locations or custom address; date/time with quick shortcuts (+1h, +2h, +4h, +8h); past date/time is rejected
 3. **Available Vehicles** — Shows fleet-assigned vehicles at the selected pickup location; "No Preference" is always available
 4. **Review & Submit** — Full summary before submission
 
 ### Fleet Master Assignment
 - Admin permanently assigns a driver to a vehicle (fleet-level, separate from booking assignments)
-- Driver sets their current location (preset or free-text) from the Fleet tab
-- Location drives the "Available Vehicles" screen — only drivers at the pickup location appear
+- Driver sets their current location (preset or free-text) from the Fleet tab — location is written to the **Vehicle** record as the single source of truth
+- Location is automatically updated on trip start (set to pickup point) and trip end (set to dropoff point)
+- Admin can manually set location on unassigned vehicles (AVAILABLE with no fleet driver)
+- Location drives the "Available Vehicles" screen — only vehicles at the pickup location appear
 - One-vehicle-per-driver and one-driver-per-vehicle enforced at both DB and service layers
 
 ### Trip Execution
-- Driver starts trip → odometer logged → GPS pings recorded → driver completes trip → odometer end + fuel log (optional)
-- Vehicle status transitions: AVAILABLE → ASSIGNED → IN_TRIP → AVAILABLE
+- Driver starts trip → odometer reading (optional) → GPS pings recorded → driver completes trip → odometer end (optional) + fuel log (optional)
+- Vehicle location automatically updated: trip start sets pickup location, trip end sets dropoff location
+- Vehicle status transitions: AVAILABLE → ASSIGNED → IN_TRIP → ASSIGNED (back to driver) → AVAILABLE (when fleet-unassigned)
 - IN_TRIP guard: vehicle and driver cannot be reassigned while a trip is active
+- Booking cancellation does not affect the fleet-level vehicle/driver assignment
 
 ### Approval Modes
 - **Manual** — Admin reviews every booking before it enters the assignment queue
@@ -231,10 +235,11 @@ PENDING_APPROVAL ──[reject]──► REJECTED
 Admin assigns driver to vehicle (Fleet Master)
               │
               ▼
-     Vehicle: ASSIGNED
+     Vehicle: ASSIGNED  ◄── Vehicle.location = source of truth
      Driver: has assignedVehicle
               │
     Driver sets current location
+    (writes to Vehicle.currentLocation*)
               │
               ▼
       Appears in "Available Vehicles"
@@ -243,12 +248,15 @@ Admin assigns driver to vehicle (Fleet Master)
     Booking assigned (auto or admin)
               │
               ▼
-     Vehicle: IN_TRIP  (during trip)
+     Vehicle: IN_TRIP  ◄── location set to pickup on trip start
               │
-       Trip completed
+       Trip completed ──── location set to dropoff on trip end
               │
               ▼
      Vehicle: ASSIGNED  (back with driver)
+              │
+    Booking cancel/decline → vehicle stays ASSIGNED
+    (fleet assignment is preserved)
               │
     Admin/Driver unassigns (Fleet Master)
               │

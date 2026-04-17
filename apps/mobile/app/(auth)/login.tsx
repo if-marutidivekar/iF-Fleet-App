@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
@@ -230,7 +230,10 @@ function ChangePinScreen({ token, onDone }: { token: string; onDone: () => void 
   if (success) {
     return (
       <View style={styles.card}>
-        <Text style={styles.logo}>iF Fleet</Text>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
+          <Text style={styles.logo}>iF Fleet</Text>
+        </View>
         <View style={styles.successBox}>
           <Text style={styles.successIcon}>✓</Text>
           <Text style={styles.successTitle}>PIN Changed</Text>
@@ -373,7 +376,10 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.logo}>iF Fleet</Text>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
+          <Text style={styles.logo}>iF Fleet</Text>
+        </View>
         <Text style={styles.subtitle}>Company fleet management</Text>
 
         {/* Tab switcher */}
@@ -404,8 +410,10 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1d4ed8', justifyContent: 'center', padding: 20 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 2 },
+  logoImg:  { width: 36, height: 36 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 28 },
-  logo: { fontSize: 28, fontWeight: '800', color: '#1d4ed8', textAlign: 'center' },
+  logo: { fontSize: 28, fontWeight: '800', color: '#1d4ed8' },
   subtitle: { fontSize: 13, color: '#64748b', textAlign: 'center', marginBottom: 20 },
 
   // Tabs

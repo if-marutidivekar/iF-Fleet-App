@@ -297,7 +297,10 @@ export function LoginPage() {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <h1 className={styles.logo}>iF Fleet</h1>
+        <div className={styles.brandRow}>
+          <img src="/android-chrome-192x192.png" alt="iF Fleet logo" className={styles.logoImg} />
+          <h1 className={styles.logo}>iF Fleet</h1>
+        </div>
         <p className={styles.subtitle}>Company fleet management</p>
 
         {/* Forced PIN change — replaces the normal form */}

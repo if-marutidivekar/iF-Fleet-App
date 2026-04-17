@@ -11,6 +11,7 @@ interface Booking {
   materialDescription?: string;
   pickupLabel?: string;
   pickupCustomAddress?: string;
+  pickupPresetId?: string | null;
   dropoffLabel?: string;
   dropoffCustomAddress?: string;
   requestedAt: string;
@@ -26,6 +27,7 @@ interface Booking {
   } | null;
 }
 
+// Step 37: Extended vehicle type returned by /fleet/vehicles/for-assignment
 interface Vehicle {
   id: string;
   vehicleNo: string;
@@ -34,6 +36,9 @@ interface Vehicle {
   model?: string;
   capacity: number;
   status: string;
+  currentLocationText?: string | null;
+  currentLocationPreset?: { id: string; name: string } | null;
+  currentDriver?: { user: { name: string } } | null;
 }
 
 interface DriverProfile {
@@ -104,11 +109,9 @@ function StatusBadge({ booking }: { booking: Booking }) {
 
 function BookingRow({
   booking,
-  vehicles,
   drivers,
 }: {
   booking: Booking;
-  vehicles: Vehicle[];
   drivers: DriverProfile[];
 }) {
   const qc = useQueryClient();
@@ -121,6 +124,21 @@ function BookingRow({
   const [reassignVehicle, setReassignVehicle] = useState('');
   const [reassignDriver, setReassignDriver] = useState('');
   const [cancelling, setCancelling] = useState(false);
+
+  // Step 37: Fetch assignable vehicles lazily when the assign/reassign panel opens.
+  // Uses for-assignment endpoint which returns AVAILABLE + non-conflicting ASSIGNED vehicles,
+  // filtered by booking's pickup preset location when available.
+  const assignmentVehicleQueryKey = ['vehicles-for-assignment', booking.pickupPresetId ?? 'none'];
+  const { data: assignableVehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: assignmentVehicleQueryKey,
+    queryFn: async () => {
+      const params = booking.pickupPresetId ? `?pickupPresetId=${booking.pickupPresetId}` : '';
+      const res = await api.get<Vehicle[]>(`/fleet/vehicles/for-assignment${params}`);
+      return res.data;
+    },
+    enabled: assigning || reassigning,
+    staleTime: 15_000,
+  });
 
   const approveMutation = useMutation({
     mutationFn: () => api.patch(`/bookings/${booking.id}/approve`),
@@ -171,8 +189,15 @@ function BookingRow({
 
   const pickup = booking.pickupLabel || booking.pickupCustomAddress || '—';
   const dropoff = booking.dropoffLabel || booking.dropoffCustomAddress || '—';
-  const availableVehicles = vehicles.filter((v) => v.status === 'AVAILABLE');
+  // Step 37: Use the pre-fetched assignableVehicles from the for-assignment endpoint
   const readyDrivers = drivers.filter((d) => d.shiftReady);
+
+  /** Format vehicle label with location for the dropdown */
+  const vehicleLabel = (v: Vehicle) => {
+    const loc = v.currentLocationPreset?.name ?? v.currentLocationText;
+    const locStr = loc ? ` · 📍 ${loc}` : '';
+    return `${v.vehicleNo} — ${v.type}${v.make ? ` ${v.make}` : ''}${locStr} (cap: ${v.capacity})`;
+  };
 
   return (
     <>
@@ -395,9 +420,10 @@ function BookingRow({
                     style={{ padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 12, outline: 'none', background: '#fff' }}
                   >
                     <option value="">Select vehicle...</option>
-                    {availableVehicles.map((v) => (
+                    {assignableVehicles.length === 0 && <option disabled>No vehicles available at this pickup</option>}
+                    {assignableVehicles.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {v.vehicleNo} — {v.type} {v.make} {v.model}
+                        {vehicleLabel(v)}
                       </option>
                     ))}
                   </select>
@@ -510,9 +536,10 @@ function BookingRow({
                     }}
                   >
                     <option value="">Select vehicle...</option>
-                    {availableVehicles.map((v) => (
+                    {assignableVehicles.length === 0 && <option disabled>No vehicles available at this pickup</option>}
+                    {assignableVehicles.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {v.vehicleNo} — {v.type} {v.make} {v.model} (cap: {v.capacity})
+                        {vehicleLabel(v)}
                       </option>
                     ))}
                   </select>
@@ -597,14 +624,8 @@ export function BookingQueuePage() {
     },
   });
 
-  const { data: vehicles = [] } = useQuery<Vehicle[]>({
-    queryKey: ['fleet-vehicles'],
-    queryFn: async () => {
-      const res = await api.get('/fleet/vehicles');
-      return res.data;
-    },
-  });
-
+  // Step 37: BookingRow fetches its own vehicles via for-assignment endpoint per booking.
+  // We still fetch drivers here centrally to avoid N+1 driver queries per row.
   const { data: drivers = [] } = useQuery<DriverProfile[]>({
     queryKey: ['fleet-drivers'],
     queryFn: async () => {
@@ -623,18 +644,18 @@ export function BookingQueuePage() {
   );
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '32px 24px' }}>
-      {/* Page header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 24,
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
+      {/* Page header — fixed */}
+      <div style={{ flexShrink: 0, padding: '1.5rem 1.5rem 0.75rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
           Booking Queue
         </h1>
@@ -653,15 +674,16 @@ export function BookingQueuePage() {
         >
           + New Booking
         </button>
+        </div>
       </div>
 
-      {/* Tab filters */}
+      {/* Tab filters — fixed */}
+      <div style={{ flexShrink: 0, padding: '0 1.5rem 0.75rem' }}>
       <div
         style={{
           display: 'flex',
           gap: 4,
           flexWrap: 'wrap',
-          marginBottom: 16,
           background: '#fff',
           border: '1px solid #e2e8f0',
           borderRadius: 10,
@@ -711,8 +733,10 @@ export function BookingQueuePage() {
           );
         })}
       </div>
+      </div>
 
-      {/* Table */}
+      {/* Scrollable table area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 1.5rem 1.5rem' }}>
       <div
         style={{
           background: '#fff',
@@ -763,13 +787,13 @@ export function BookingQueuePage() {
                 <BookingRow
                   key={booking.id}
                   booking={booking}
-                  vehicles={vehicles}
                   drivers={drivers}
                 />
               ))}
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </div>
   );

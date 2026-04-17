@@ -198,8 +198,15 @@ status                  VehicleStatus     AVAILABLE | ASSIGNED | IN_TRIP | MAINT
 maintenanceDueAt        DateTime?
 currentDriverId         String?           FK → DriverProfile (fleet-level assignment)
 currentDriverAssignedAt DateTime?
+currentLocationText     String?           Current location — free-text address (single source of truth)
+currentLocationPresetId String?           FK → PresetLocation (named relation "VehicleCurrentLocation")
+locationUpdatedAt       DateTime?         When the vehicle's location was last updated
 deletedAt               DateTime?         Soft delete
 ```
+
+> **Vehicle is the location source of truth.** All writes to location (driver updates their location,
+> trip start sets pickup, trip end sets dropoff, admin manual set) target the Vehicle's own fields.
+> Consumer code reads `Vehicle.currentLocationText` / `Vehicle.currentLocationPreset` directly.
 
 #### DriverProfile
 ```
@@ -208,11 +215,15 @@ userId                  String (unique)   FK → User
 licenseNumber           String
 licenseExpiry           DateTime
 shiftReady              Boolean           Must be true for assignments
-currentLocationText     String?           Free-text current location
+currentLocationText     String?           Driver's stated location (synced to Vehicle on update)
 currentLocationPresetId String?           FK → PresetLocation
 locationUpdatedAt       DateTime?         When location was last set
 deletedAt               DateTime?
 ```
+
+> **Driver location syncs to Vehicle.** When a driver calls `PATCH /fleet/drivers/my-location`,
+> the API writes both the `DriverProfile` and the driver's currently assigned `Vehicle` with the
+> same location values. The Vehicle copy is the authoritative source used by all consumers.
 
 #### Booking
 ```
@@ -736,21 +747,57 @@ When an employee selects a preferred vehicle at booking time:
 
 Approval mode is stored in `AppConfig { key: 'booking.approvalMode', value: 'MANUAL' | 'AUTO' }`. This allows runtime switching without code deployment.
 
-### 5. No GPS Simulation at MVP
+### 5. Vehicle Location as Single Source of Truth
+
+The `Vehicle` model owns the canonical current location of each vehicle via three fields:
+`currentLocationText`, `currentLocationPresetId`, and `locationUpdatedAt`.
+
+Every location-changing event writes to the Vehicle directly:
+
+| Event | Who writes | Fields updated |
+|-------|-----------|----------------|
+| Driver sets location (`PATCH /fleet/drivers/my-location`) | `fleet.service` | Vehicle + DriverProfile |
+| Trip start | `trips.service` | Vehicle (`currentLocationPresetId` = booking pickup) |
+| Trip end | `trips.service` | Vehicle (`currentLocationPresetId` = booking dropoff) |
+| Admin manual set (`PATCH /fleet/vehicles/:id/location`) | `fleet.service` | Vehicle only |
+
+**Admin manual set rules:** Only allowed when the vehicle has `currentDriverId = null` AND status is not `ASSIGNED` or `IN_TRIP`. When a driver is assigned, the driver's own location updates are the authoritative write path.
+
+All consumers (Fleet Master table, Available Vehicles screen, assignment dropdown) read from `Vehicle.currentLocationText` / `Vehicle.currentLocationPreset` directly — never from the driver's copy.
+
+### 6. No GPS Simulation at MVP
 
 Live GPS tracking uses `expo-location` on mobile. The `LocationSource` enum includes `SIMULATED` for future testing, but only `LIVE` and `DELAYED_SYNC` are produced at runtime. Driver location for the "Available Vehicles" feature is a manually set field (`currentLocationText` / `currentLocationPresetId`), not live GPS.
 
-### 6. PIN Security (Dual Hash)
+### 7. PIN Security (Dual Hash)
 
 Driver PINs use two hashes:
 - **bcrypt** (`pinHash`) — for authentication (timing-safe comparison)
 - **HMAC-SHA256** (`pinHmac`) — for uniqueness checks only (to prevent PIN reuse without exposing the raw PIN to bcrypt comparisons during bulk checks)
 
-### 7. Soft Deletes
+### 8. Fleet Assignment Preservation on Cancellation
+
+When a booking is cancelled, declined, or a driver cancels an accepted assignment, the vehicle's status is only reset to `AVAILABLE` if the vehicle has **no fleet-assigned driver** (`currentDriverId = null`). If a fleet driver is assigned, the vehicle stays `ASSIGNED` — the booking lifecycle does not affect the standing fleet assignment.
+
+This is enforced in `bookings.service`, `assignments.service` (decline + driverCancel), and any reassign path.
+
+### 9. Past Datetime Validation
+
+Booking `requestedAt` is validated against the current server time with a 60-second grace window to account for client clock skew:
+
+```typescript
+if (requestedAt.getTime() < Date.now() - 60_000) {
+  throw new BadRequestException('Booking date/time cannot be in the past.');
+}
+```
+
+The same check is mirrored on the mobile client (`new-booking.tsx`) to give instant feedback before the request is sent.
+
+### 10. Soft Deletes
 
 `User`, `DriverProfile`, and `Vehicle` support soft deletes (`deletedAt DateTime?`). All queries filter `where: { deletedAt: null }`. Historical records (bookings, assignments, trips, audit logs) reference the original IDs and remain intact.
 
-### 8. Refresh Token Security
+### 11. Refresh Token Security
 
 Refresh tokens are stored as bcrypt hashes in `DeviceSession`. The raw token is only ever held by the client. On logout, the session is revoked by setting `revokedAt`. On refresh, the hash is looked up and the `revokedAt` check prevents use of revoked tokens.
 
@@ -774,15 +821,18 @@ ASSIGNED         ──[cancel]──► CANCELLED
 ### Vehicle Status Transitions
 
 ```
-AVAILABLE ──[fleet assign / booking assign]──► ASSIGNED
-ASSIGNED  ──[trip start]────────────────────► IN_TRIP
-IN_TRIP   ──[trip complete]─────────────────► ASSIGNED
-ASSIGNED  ──[unassign fleet]────────────────► AVAILABLE
-ASSIGNED  ──[booking cancel / decline]──────► AVAILABLE
-AVAILABLE ──[maintenance flag]──────────────► MAINTENANCE
-MAINTENANCE ──[maintenance clear]───────────► AVAILABLE
-ANY       ──[admin deactivate]──────────────► INACTIVE
+AVAILABLE ──[fleet assign / booking assign]──────────────────────────► ASSIGNED
+ASSIGNED  ──[trip start]─────────────────────────────────────────────► IN_TRIP
+IN_TRIP   ──[trip complete]──────────────────────────────────────────► ASSIGNED
+ASSIGNED  ──[fleet unassign]─────────────────────────────────────────► AVAILABLE
+ASSIGNED  ──[booking cancel/decline, no fleet driver]────────────────► AVAILABLE
+ASSIGNED  ──[booking cancel/decline, fleet driver still assigned]─────► ASSIGNED (unchanged)
+AVAILABLE ──[maintenance flag]───────────────────────────────────────► MAINTENANCE
+MAINTENANCE ──[maintenance clear]────────────────────────────────────► AVAILABLE
+ANY       ──[admin deactivate]───────────────────────────────────────► INACTIVE
 ```
+
+> Booking-lifecycle events (cancel, decline, driver cancel) do **not** revert a vehicle to `AVAILABLE` if it has a standing fleet driver. The fleet assignment is independent of the booking assignment.
 
 ### Assignment Decision Transitions
 
@@ -830,8 +880,10 @@ Full interactive docs available at `/api/docs` (Swagger UI, disabled in producti
 | PATCH | `/fleet/vehicles/:id` | Admin | Update vehicle |
 | PATCH | `/fleet/vehicles/:id/assign-driver` | Admin | Fleet-assign driver to vehicle |
 | PATCH | `/fleet/vehicles/:id/unassign-driver` | Admin/Driver | Remove fleet driver assignment |
+| PATCH | `/fleet/vehicles/:id/location` | Admin | Set vehicle location (only when no fleet driver + not ASSIGNED/IN_TRIP) |
 | GET | `/fleet/vehicles/available-with-driver` | Any | Vehicles with driver at pickup location |
 | GET | `/fleet/vehicles/available` | Driver | AVAILABLE vehicles (for self-assign) |
+| GET | `/fleet/vehicles/for-assignment` | Admin | AVAILABLE + non-conflicting ASSIGNED vehicles; accepts `?pickupPresetId` filter |
 | POST | `/fleet/vehicles/:id/self-assign` | Driver | Driver self-assigns a vehicle |
 | GET | `/fleet/drivers` | Admin | List all driver profiles |
 | POST | `/fleet/drivers` | Admin | Create driver profile |

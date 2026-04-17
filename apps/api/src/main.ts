@@ -1,12 +1,20 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe, VersioningType, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  // Disable Express ETag generation.
+  // ETags cause clients to receive 304 Not Modified for live-data endpoints
+  // (trips, assignments, notifications) even when the underlying data has changed.
+  // React Query manages its own stale/refetch lifecycle, so server-side ETags add
+  // no benefit and only risk serving stale responses.
+  app.getHttpAdapter().getInstance().disable('etag');
 
   // Security headers
   app.use(helmet());
@@ -44,7 +52,7 @@ async function bootstrap() {
 
   const port = process.env['PORT'] ?? 3001;
   await app.listen(port);
-  console.log(`iF Fleet API running on port ${port}`);
+  logger.log(`iF Fleet API running on port ${port}`);
 }
 
 bootstrap();

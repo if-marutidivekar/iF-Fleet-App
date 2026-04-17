@@ -16,6 +16,11 @@ interface Vehicle {
   status: string;
   currentDriverId?: string | null;
   currentDriverAssignedAt?: string | null;
+  // Step 31: Vehicle's own shared location — single source of truth
+  currentLocationText?: string | null;
+  currentLocationPresetId?: string | null;
+  currentLocationPreset?: { id: string; name: string } | null;
+  locationUpdatedAt?: string | null;
   currentDriver?: {
     id: string;
     currentLocationText?: string | null;
@@ -23,7 +28,7 @@ interface Vehicle {
     currentLocationPreset?: { id: string; name: string } | null;
     user: { id: string; name: string; email: string; mobileNumber?: string | null };
   } | null;
-  // Last booking assignment — used as location fallback (Step 12)
+  // Last booking assignment — used as legacy location fallback
   assignments?: Array<{ booking: { pickupLabel?: string | null } | null }>;
 }
 
@@ -112,14 +117,23 @@ const selectStyle: React.CSSProperties = {
 // ─── Vehicles Tab ─────────────────────────────────────────────────────────────
 
 /** Compute vehicle's effective current location for the Fleet Master table.
- *  Priority: (1) driver's set location preset, (2) driver's free-text, (3) last booking pickup, (4) —
+ *  Step 31: Vehicle's own location fields are the primary source of truth (updated from all valid
+ *  lifecycle events). Falls back to driver location, then last booking pickup for legacy data.
+ *  Priority: (1) vehicle's own preset, (2) vehicle's free-text, (3) driver's preset, (4) driver's free-text, (5) last booking pickup, (6) —
  */
 function getVehicleCurrentLocation(v: Vehicle): string {
+  if (v.currentLocationPreset?.name) return v.currentLocationPreset.name;
+  if (v.currentLocationText) return v.currentLocationText;
   if (v.currentDriver?.currentLocationPreset?.name) return v.currentDriver.currentLocationPreset.name;
   if (v.currentDriver?.currentLocationText) return v.currentDriver.currentLocationText;
   const lastPickup = v.assignments?.[0]?.booking?.pickupLabel;
   if (lastPickup) return lastPickup;
   return '—';
+}
+
+/** Whether admin is allowed to manually set this vehicle's location (Step 32) */
+function canAdminSetLocation(v: Vehicle): boolean {
+  return !v.currentDriverId && !['ASSIGNED', 'IN_TRIP'].includes(v.status);
 }
 
 const VEHICLE_TYPES = ['SEDAN', 'SUV', 'VAN', 'TRUCK', 'BUS'];
@@ -136,6 +150,11 @@ function VehiclesTab() {
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignDriverProfileId, setAssignDriverProfileId] = useState('');
   const [assignError, setAssignError] = useState('');
+  // Step 32: Admin vehicle location set state
+  const [setLocId, setSetLocId] = useState<string | null>(null);
+  const [locPresetId, setLocPresetId] = useState('');
+  const [locCustom, setLocCustom] = useState('');
+  const [locError, setLocError] = useState('');
 
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({
     queryKey: ['fleet-vehicles'],
@@ -145,6 +164,31 @@ function VehiclesTab() {
   const { data: drivers = [] } = useQuery<DriverProfile[]>({
     queryKey: ['fleet-drivers'],
     queryFn: () => api.get<DriverProfile[]>('/fleet/drivers').then((r) => r.data),
+  });
+
+  const { data: locations = [] } = useQuery<PresetLocation[]>({
+    queryKey: ['fleet-locations'],
+    queryFn: () => api.get<PresetLocation[]>('/fleet/locations?activeOnly=true').then((r) => r.data),
+  });
+
+  // Step 32: Admin set vehicle location mutation
+  const setVehicleLocationMutation = useMutation({
+    mutationFn: ({ vehicleId, presetId, customAddress }: { vehicleId: string; presetId?: string; customAddress?: string }) =>
+      api.patch(`/fleet/vehicles/${vehicleId}/location`, {
+        ...(presetId ? { presetId } : {}),
+        ...(customAddress ? { customAddress } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fleet-vehicles'] });
+      setSetLocId(null);
+      setLocPresetId('');
+      setLocCustom('');
+      setLocError('');
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setLocError(typeof msg === 'string' ? msg : 'Failed to set location');
+    },
   });
 
   const assignDriverMutation = useMutation({
@@ -305,14 +349,14 @@ function VehiclesTab() {
                     </td>
                     <td style={{ padding: '0.625rem 0.875rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
                       <button
-                        onClick={() => { editId === v.id ? setEditId(null) : startEdit(v); setAssigningId(null); }}
+                        onClick={() => { editId === v.id ? setEditId(null) : startEdit(v); setAssigningId(null); setSetLocId(null); }}
                         style={{ padding: '0.2rem 0.5rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                       >
                         {editId === v.id ? 'Cancel' : 'Edit'}
                       </button>
                       {!v.currentDriver ? (
                         <button
-                          onClick={() => { setAssigningId(assigningId === v.id ? null : v.id); setAssignDriverProfileId(''); setAssignError(''); setEditId(null); }}
+                          onClick={() => { setAssigningId(assigningId === v.id ? null : v.id); setAssignDriverProfileId(''); setAssignError(''); setEditId(null); setSetLocId(null); }}
                           style={{ padding: '0.2rem 0.5rem', background: '#f0fdf4', color: '#059669', border: '1px solid #bbf7d0', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                         >
                           {assigningId === v.id ? 'Cancel' : 'Assign Driver'}
@@ -328,6 +372,15 @@ function VehiclesTab() {
                           style={{ padding: '0.2rem 0.5rem', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                         >
                           Unassign
+                        </button>
+                      )}
+                      {/* Step 32: Set Location — only when vehicle is unassigned and not ASSIGNED/IN_TRIP */}
+                      {canAdminSetLocation(v) && (
+                        <button
+                          onClick={() => { setSetLocId(setLocId === v.id ? null : v.id); setLocPresetId(''); setLocCustom(''); setLocError(''); setEditId(null); setAssigningId(null); }}
+                          style={{ padding: '0.2rem 0.5rem', background: '#fdf4ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {setLocId === v.id ? 'Cancel' : 'Set Location'}
                         </button>
                       )}
                       {v.status === 'AVAILABLE' && !v.currentDriver && (
@@ -381,6 +434,54 @@ function VehiclesTab() {
                             No shift-ready drivers available. Mark a driver as Ready in the Drivers tab first.
                           </p>
                         )}
+                      </td>
+                    </tr>
+                  )}
+                  {setLocId === v.id && (
+                    <tr key={`${v.id}-setloc`} style={{ borderBottom: i < vehicles.length - 1 ? '1px solid #f1f5f9' : 'none', background: '#fdf4ff' }}>
+                      <td colSpan={9} style={{ padding: '0.875rem 1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, minWidth: 220 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Preset Location</span>
+                            <select
+                              value={locPresetId}
+                              onChange={(e) => { setLocPresetId(e.target.value); if (e.target.value) setLocCustom(''); setLocError(''); }}
+                              style={{ ...selectStyle, minWidth: 220 }}
+                            >
+                              <option value="">— Select preset —</option>
+                              {locations.map((l) => (
+                                <option key={l.id} value={l.id}>{l.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, minWidth: 200 }}>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>or Custom Address</span>
+                            <input
+                              type="text"
+                              placeholder="e.g. Gate 4, Andheri West"
+                              value={locCustom}
+                              onChange={(e) => { setLocCustom(e.target.value); if (e.target.value) setLocPresetId(''); setLocError(''); }}
+                              style={{ ...inputStyle, minWidth: 200 }}
+                            />
+                          </label>
+                          <button
+                            onClick={() => {
+                              if (!locPresetId && !locCustom.trim()) { setLocError('Select a preset or enter a custom address'); return; }
+                              setVehicleLocationMutation.mutate({ vehicleId: v.id, presetId: locPresetId || undefined, customAddress: locCustom.trim() || undefined });
+                            }}
+                            disabled={setVehicleLocationMutation.isPending}
+                            style={{ padding: '0.4rem 1rem', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {setVehicleLocationMutation.isPending ? 'Saving…' : 'Save Location'}
+                          </button>
+                          <button
+                            onClick={() => { setSetLocId(null); setLocPresetId(''); setLocCustom(''); setLocError(''); }}
+                            style={{ padding: '0.4rem 0.875rem', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {locError && <p style={{ color: '#dc2626', fontSize: 12, marginTop: '0.4rem' }}>{locError}</p>}
                       </td>
                     </tr>
                   )}
@@ -878,20 +979,35 @@ export function FleetMasterPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('vehicles');
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.25rem' }}>
-        Fleet Master Data
-      </h1>
-
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        <TabBtn label="Vehicles" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
-        <TabBtn label="Drivers" active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} />
-        <TabBtn label="Preset Locations" active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} />
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
+      {/* Page title — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1.5rem 0.75rem' }}>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Fleet Master Data
+          </h1>
+        </div>
       </div>
 
-      {activeTab === 'vehicles' && <VehiclesTab />}
-      {activeTab === 'drivers' && <DriversTab />}
-      {activeTab === 'locations' && <LocationsTab />}
+      {/* Tab bar — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <TabBtn label="Vehicles" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
+            <TabBtn label="Drivers" active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} />
+            <TabBtn label="Preset Locations" active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} />
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 1.5rem 1.5rem' }}>
+          {activeTab === 'vehicles' && <VehiclesTab />}
+          {activeTab === 'drivers' && <DriversTab />}
+          {activeTab === 'locations' && <LocationsTab />}
+        </div>
+      </div>
     </div>
   );
 }

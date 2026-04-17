@@ -53,12 +53,11 @@ export default function NewBookingScreen() {
   const [materialDesc, setMaterialDesc] = useState('');
 
   // Step 2 — Pickup, Drop & Time
-  // Default to first preset (not "Other address") once locations load
+  // Start with null (no selection) so the user must explicitly choose — matches web behaviour.
   const [pickupPresetId, setPickupPresetId] = useState<string | null>(null);
   const [pickupCustom, setPickupCustom] = useState('');
   const [dropoffPresetId, setDropoffPresetId] = useState<string | null>(null);
   const [dropoffCustom, setDropoffCustom] = useState('');
-  const [locationsInitialized, setLocationsInitialized] = useState(false);
   const [requestedAt, setRequestedAt] = useState(() => {
     const d = new Date(); d.setHours(d.getHours() + 1); d.setMinutes(0, 0, 0);
     return formatDateTimeLocal(d);
@@ -66,6 +65,9 @@ export default function NewBookingScreen() {
 
   // Step 3 — Available Vehicles
   const [preferredVehicleId, setPreferredVehicleId] = useState<string | null>(null);
+
+  // Step 38: Past datetime validation state
+  const [requestedAtError, setRequestedAtError] = useState('');
 
   // Step 13/14: Reset vehicle preference whenever pickup changes so stale selections
   // are never silently carried forward to a different pickup location.
@@ -79,13 +81,6 @@ export default function NewBookingScreen() {
     queryFn: () => api.get<PresetLocation[]>('/fleet/locations?activeOnly=true').then(r => r.data),
     staleTime: 5 * 60_000,
   });
-
-  // Auto-select the first preset for pickup & drop once loaded (dropdown defaults)
-  if (!locationsInitialized && locations.length > 0) {
-    setLocationsInitialized(true);
-    if (pickupPresetId === null) setPickupPresetId(locations[0]!.id);
-    if (dropoffPresetId === null) setDropoffPresetId(locations[0]!.id);
-  }
 
   const pickupPresetParam =
     pickupPresetId && pickupPresetId !== '__other__' ? pickupPresetId : undefined;
@@ -157,7 +152,28 @@ export default function NewBookingScreen() {
     ? availableVehicles.find(v => v.id === preferredVehicleId)?.vehicleNo ?? 'Selected'
     : 'No preference';
 
-  // Validation — preset selected OR custom address typed
+  // Step 38: Check if current requestedAt is in the past (with 60s grace)
+  const isRequestedAtPast = (): boolean => {
+    if (!requestedAt) return false;
+    const d = new Date(requestedAt);
+    return !isNaN(d.getTime()) && d.getTime() < Date.now() - 60_000;
+  };
+
+  const handleRequestedAtChange = (val: string) => {
+    setRequestedAt(val);
+    if (val) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime()) && d.getTime() < Date.now() - 60_000) {
+        setRequestedAtError('Booking date/time cannot be in the past. Please select a future time.');
+      } else {
+        setRequestedAtError('');
+      }
+    } else {
+      setRequestedAtError('');
+    }
+  };
+
+  // Validation — preset selected OR custom address typed, AND time is not in the past
   const canNext2 = (
       (pickupPresetId !== null && pickupPresetId !== '__other__') ||
       pickupCustom.trim().length > 2
@@ -166,7 +182,8 @@ export default function NewBookingScreen() {
       (dropoffPresetId !== null && dropoffPresetId !== '__other__') ||
       dropoffCustom.trim().length > 2
     ) &&
-    !!requestedAt;
+    !!requestedAt &&
+    !isRequestedAtPast();
 
   const STEPS = ['Transport', 'Locations & Time', 'Vehicle', 'Review'];
 
@@ -322,18 +339,27 @@ export default function NewBookingScreen() {
             {/* Date & Time */}
             <Text style={[s.sectionHeader, { marginTop: 12 }]}>🕐 Date & Time</Text>
             <TextInput
-              style={s.input}
+              style={[s.input, requestedAtError ? { borderColor: '#ef4444' } : {}]}
               value={requestedAt}
-              onChangeText={setRequestedAt}
+              onChangeText={handleRequestedAtChange}
               placeholder="YYYY-MM-DDTHH:MM"
               placeholderTextColor={C.light}
               keyboardType="numbers-and-punctuation"
             />
+            {requestedAtError ? (
+              <Text style={{ color: '#ef4444', fontSize: 12, marginBottom: 8, marginTop: -6 }}>
+                ⚠ {requestedAtError}
+              </Text>
+            ) : null}
             <View style={s.quickRow}>
               {[1, 2, 4, 8].map(h => {
                 const d = new Date(); d.setHours(d.getHours() + h); d.setMinutes(0, 0, 0);
                 return (
-                  <TouchableOpacity key={h} style={s.quickBtn} onPress={() => setRequestedAt(formatDateTimeLocal(d))}>
+                  <TouchableOpacity key={h} style={s.quickBtn} onPress={() => {
+                    const val = formatDateTimeLocal(d);
+                    setRequestedAt(val);
+                    setRequestedAtError(''); // Quick shortcuts always set future time
+                  }}>
                     <Text style={s.quickBtnTxt}>+{h}h</Text>
                   </TouchableOpacity>
                 );
@@ -385,7 +411,11 @@ export default function NewBookingScreen() {
             )}
 
             {availableVehicles.map(v => {
-              const location = v.currentDriver?.currentLocationPreset?.name
+              // Step 31: Use vehicle's own location as primary source (currentLocationPreset/Text)
+              // Fall back to driver's location for legacy compatibility
+              const location = (v as { currentLocationPreset?: { name: string }; currentLocationText?: string })?.currentLocationPreset?.name
+                ?? (v as { currentLocationText?: string })?.currentLocationText
+                ?? v.currentDriver?.currentLocationPreset?.name
                 ?? v.currentDriver?.currentLocationText
                 ?? '—';
               return (

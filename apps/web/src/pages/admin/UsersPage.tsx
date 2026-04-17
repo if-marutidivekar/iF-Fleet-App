@@ -313,28 +313,36 @@ export function UsersPage() {
   const editIsDriver = editUser?.role === 'DRIVER';
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 1200, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>User Management</h1>
-          <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>{users.length} users registered</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => { setShowCsvImport(!showCsvImport); setShowAddForm(false); }}
-            style={{ padding: '0.5rem 1rem', background: '#f0fdf4', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
-          >
-            {showCsvImport ? 'Close Import' : '📂 Import CSV'}
-          </button>
-          <button
-            onClick={() => { setShowAddForm(!showAddForm); setShowCsvImport(false); }}
-            style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
-          >
-            {showAddForm ? 'Cancel' : '+ Add User'}
-          </button>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
+      {/* Header — fixed */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '1.5rem 1.5rem 0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>User Management</h1>
+              <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>{users.length} users registered</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setShowCsvImport(!showCsvImport); setShowAddForm(false); }}
+                style={{ padding: '0.5rem 1rem', background: '#f0fdf4', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+              >
+                {showCsvImport ? 'Close Import' : '📂 Import CSV'}
+              </button>
+              <button
+                onClick={() => { setShowAddForm(!showAddForm); setShowCsvImport(false); }}
+                style={{ padding: '0.5rem 1.25rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+              >
+                {showAddForm ? 'Cancel' : '+ Add User'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Scrollable content */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 1.5rem 1.5rem' }}>
 
       {/* CSV Import Panel */}
       {showCsvImport && (
@@ -639,6 +647,9 @@ export function UsersPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+        </div>
       </div>
     </div>
   );

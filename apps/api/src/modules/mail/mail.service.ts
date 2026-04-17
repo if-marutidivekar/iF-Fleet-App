@@ -52,7 +52,18 @@ export class MailService {
     const smtp = await this.getSmtpConfig();
 
     if (!smtp) {
-      // Bootstrap mode: no SMTP configured yet
+      // Bootstrap mode: no SMTP configured yet.
+      // OTP is logged to the terminal in development/staging so the admin can
+      // complete first login and then configure SMTP via Admin → Settings.
+      // In production this path must never be reached — SMTP must be configured
+      // before the first login attempt.
+      if (process.env['NODE_ENV'] === 'production') {
+        this.logger.error(
+          `SMTP is not configured. Cannot deliver OTP to ${to}. ` +
+            'Configure SMTP via Admin → Settings before users attempt to log in.',
+        );
+        throw new Error('SMTP is not configured. OTP delivery failed.');
+      }
       this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       this.logger.warn(`  SMTP NOT CONFIGURED — OTP for ${to}: ${otp}`);
       this.logger.warn('  Log in as admin and go to Admin → Settings to configure SMTP.');
@@ -93,12 +104,18 @@ export class MailService {
       this.logger.log(`OTP email sent to ${to}`);
     } catch (err) {
       // SMTP unreachable (e.g. corporate firewall blocks port 465/587).
-      // Log OTP to terminal so dev/testing can proceed without email.
       this.logger.error(`SMTP send failed: ${(err as Error).message}`);
-      this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      this.logger.warn(`  SMTP UNREACHABLE — OTP for ${to}: ${otp}`);
-      this.logger.warn('  Fix SMTP settings in Admin → Settings, or use this OTP directly.');
-      this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (process.env['NODE_ENV'] !== 'production') {
+        // In development/staging, log the OTP so testing can continue
+        // without a working SMTP relay.
+        this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        this.logger.warn(`  SMTP UNREACHABLE — OTP for ${to}: ${otp}`);
+        this.logger.warn('  Fix SMTP settings in Admin → Settings, or use this OTP directly.');
+        this.logger.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      } else {
+        // In production, never log OTPs. Re-throw so the caller can return a 503.
+        throw err;
+      }
     }
   }
 
