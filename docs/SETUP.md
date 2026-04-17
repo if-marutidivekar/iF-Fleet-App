@@ -1,13 +1,32 @@
 # iF Fleet — Setup & Installation Guide
 
-A complete, step-by-step guide for getting iF Fleet running — from a fresh machine to a fully working development environment, and onward to staging deployment.
+A complete, step-by-step guide covering two deployment scenarios and local development setup.
 
-> **New here?** Start at [System Requirements](#system-requirements) and follow every section in order. Each section links forward so you can skip parts you have already done.
+---
+
+## Deployment Quick-Reference
+
+Choose your scenario:
+
+| Scenario | Go to |
+|----------|-------|
+| **Fresh Deployment** — brand-new server, no existing data | [→ Fresh Deployment (Clean Install)](#deployment-mode-a-fresh-deployment-clean-install) |
+| **Existing Deployment** — upgrading code on a live system | [→ Existing Deployment (Upgrade / Migration)](#deployment-mode-b-existing-deployment-upgrade--migration) |
+| **Local Development** — running on a developer machine | [→ Local Development Setup](#local-development-setup) |
 
 ---
 
 ## Table of Contents
 
+- [Deployment Mode A: Fresh Deployment (Clean Install)](#deployment-mode-a-fresh-deployment-clean-install)
+- [Deployment Mode B: Existing Deployment (Upgrade / Migration)](#deployment-mode-b-existing-deployment-upgrade--migration)
+- [Local Development Setup](#local-development-setup)
+  - [System Requirements](#system-requirements)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Environment Variables](#environment-variables)
+  - [Database Setup](#database-setup)
+  - [Running the Application Locally](#running-the-application-locally)
 - [System Requirements](#system-requirements)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -49,6 +68,299 @@ A complete, step-by-step guide for getting iF Fleet running — from a fresh mac
 - [CI/CD Overview](#cicd-overview)
 - [Quick Reference — Useful Commands](#quick-reference--useful-commands)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+---
+
+## Deployment Mode A: Fresh Deployment (Clean Install)
+
+Use this when setting up iF Fleet on a server for the **first time** with no existing database or running services.
+
+### A-1. Prerequisites on the Server
+
+- Docker Engine ≥ 24 + Docker Compose v2
+- Git
+- A registered domain (e.g., `fleet.yourcompany.com`) pointed at the server
+- SMTP credentials (or a Mailtrap account for internal testing)
+- Access to a Docker registry (for pre-built images) or ability to build on-server
+
+### A-2. Clone the Repository
+
+```bash
+git clone <repo-url> /opt/if-fleet
+cd /opt/if-fleet
+```
+
+### A-3. Create the Environment File
+
+```bash
+cp infra/docker/.env.staging.template infra/docker/.env.staging
+```
+
+Edit `infra/docker/.env.staging` and fill in **every** value. Critical variables:
+
+| Variable | Required Action |
+|----------|----------------|
+| `POSTGRES_PASSWORD` | Generate a strong random password |
+| `DATABASE_URL` | Must match `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
+| `JWT_SECRET` | `openssl rand -hex 64` |
+| `PIN_HMAC_SECRET` | `openssl rand -hex 32` |
+| `COMPANY_EMAIL_DOMAIN` | Your company's email domain |
+| `CORS_ORIGINS` | `https://fleet.yourcompany.com` |
+| `SMTP_HOST/PORT/USER/PASS` | Real SMTP credentials — **mandatory in production** |
+| `IMAGE_TAG` | Git SHA or semantic version of the build to deploy |
+
+> ⚠️ Never commit `infra/docker/.env.staging` — it is in `.gitignore`.
+
+### A-4. Build Docker Images (or Pull from Registry)
+
+**Build on the server:**
+```bash
+docker build -f infra/docker/Dockerfile.api -t local/if-fleet-api:latest .
+docker build -f infra/docker/Dockerfile.web -t local/if-fleet-web:latest .
+```
+
+**Or pull from a registry:**
+```bash
+IMAGE_TAG=abc1234   # set to your git SHA
+docker pull ${REGISTRY}/if-fleet-api:${IMAGE_TAG}
+docker pull ${REGISTRY}/if-fleet-web:${IMAGE_TAG}
+```
+
+### A-5. Start All Services
+
+```bash
+cd infra/docker
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+```
+
+Wait 15–30 seconds for all containers to become healthy:
+
+```bash
+docker compose -f docker-compose.staging.yml ps
+# All services should show "healthy" or "running"
+```
+
+### A-6. Run Database Migrations
+
+```bash
+docker exec -it $(docker compose -f infra/docker/docker-compose.staging.yml ps -q api) \
+  npx prisma migrate deploy
+```
+
+Expected output: `All migrations have been successfully applied.`
+
+### A-7. Seed Initial Data (Required on First Deploy)
+
+```bash
+docker exec -it $(docker compose -f infra/docker/docker-compose.staging.yml ps -q api) \
+  npx ts-node prisma/seed.ts
+```
+
+This creates the default admin account, sample vehicles, preset locations, and app configuration.
+
+**Default seed accounts** (update passwords immediately after first login):
+
+| Role | Email | Note |
+|------|-------|------|
+| Admin | `admin@<COMPANY_EMAIL_DOMAIN>` | Log in with OTP to begin setup |
+| Employee | `employee@<COMPANY_EMAIL_DOMAIN>` | Demo account |
+| Driver | `driver@<COMPANY_EMAIL_DOMAIN>` | Mobile PIN login |
+
+### A-8. Configure TLS / HTTPS
+
+See [TLS / HTTPS Setup](#tls--https-setup) to enable HTTPS with Let's Encrypt or a self-signed certificate.
+
+### A-9. Validate the Deployment
+
+```bash
+# API health check
+curl https://fleet.yourcompany.com/api/v1/health
+# Expected: { "status": "ok", "database": "ok", "redis": "ok" }
+
+# Smoke tests
+bash infra/scripts/smoke-test.sh https://fleet.yourcompany.com
+```
+
+**Post-deployment checklist:**
+
+- [ ] Health endpoint returns `ok` for all services
+- [ ] Smoke tests pass
+- [ ] Admin can log in via OTP
+- [ ] Admin configures SMTP via Admin → Settings (if not set via env)
+- [ ] Admin creates real user accounts and removes demo seed accounts
+- [ ] Grafana is accessible at `/grafana` and dashboards show data
+
+---
+
+## Deployment Mode B: Existing Deployment (Upgrade / Migration)
+
+Use this when updating code on a **live system** that already has users and data.
+
+> **Read before proceeding:**
+> - Migrations run with `prisma migrate deploy` are **forward-only** — there is no automatic rollback.
+> - Always take a database backup before upgrading.
+> - Inform users of the maintenance window.
+
+### B-1. Pre-Upgrade Checklist
+
+- [ ] Confirm the target git tag/SHA to deploy
+- [ ] Read the migration files in `apps/api/prisma/migrations/` for any breaking schema changes
+- [ ] Check release notes or git log for breaking API changes
+- [ ] Schedule a maintenance window if the migration is destructive
+
+### B-2. Take a Database Backup (Mandatory)
+
+```bash
+# On the Docker host — creates a timestamped SQL dump
+BACKUP_FILE="fleet_db_backup_$(date +%Y%m%d_%H%M%S).sql"
+
+docker exec $(docker compose -f infra/docker/docker-compose.staging.yml ps -q postgres) \
+  pg_dump -U fleet_user fleet_db > /backups/${BACKUP_FILE}
+
+echo "Backup saved: /backups/${BACKUP_FILE}"
+ls -lh /backups/${BACKUP_FILE}
+```
+
+Verify the backup is non-empty before continuing:
+```bash
+wc -l /backups/${BACKUP_FILE}
+# Should print a large number of lines
+```
+
+### B-3. Pull Latest Code
+
+```bash
+cd /opt/if-fleet
+git fetch origin
+git checkout <new-tag-or-SHA>
+```
+
+### B-4. Install / Update Dependencies
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+### B-5. Validate Environment Variables
+
+New releases may introduce new required environment variables. Check the migration notes and compare `apps/api/.env.example` against your deployed `infra/docker/.env.staging`:
+
+```bash
+# Show variables in .env.example that are not in your .env.staging
+diff <(grep -oP '^[A-Z_]+(?==)' apps/api/.env.example | sort) \
+     <(grep -oP '^[A-Z_]+(?==)' infra/docker/.env.staging | sort)
+```
+
+Add any missing variables with appropriate values before continuing.
+
+### B-6. Build Updated Docker Images
+
+```bash
+IMAGE_TAG=$(git rev-parse --short HEAD)
+
+docker build -f infra/docker/Dockerfile.api \
+  -t ${REGISTRY:-local}/if-fleet-api:${IMAGE_TAG} .
+docker build -f infra/docker/Dockerfile.web \
+  -t ${REGISTRY:-local}/if-fleet-web:${IMAGE_TAG} .
+```
+
+Push to registry if applicable:
+```bash
+docker push ${REGISTRY}/if-fleet-api:${IMAGE_TAG}
+docker push ${REGISTRY}/if-fleet-web:${IMAGE_TAG}
+```
+
+### B-7. Run Database Migrations
+
+Run migrations **before** restarting the API to ensure schema is ready before new code serves traffic:
+
+```bash
+docker run --rm \
+  --network if-fleet-internal \
+  --env-file infra/docker/.env.staging \
+  ${REGISTRY:-local}/if-fleet-api:${IMAGE_TAG} \
+  npx prisma migrate deploy
+```
+
+Expected: `All migrations have been successfully applied.`
+
+If migrations fail, **do not restart the API**. Investigate the error and restore from backup if needed (see [Rollback](#b-rollback-procedure)).
+
+### B-8. Deploy Updated Services
+
+```bash
+cd infra/docker
+
+# Update IMAGE_TAG in .env.staging to the new value
+sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/" .env.staging
+
+# Pull and restart services
+docker compose -f docker-compose.staging.yml --env-file .env.staging pull
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+```
+
+### B-9. Validate After Upgrade
+
+```bash
+# Health check
+curl https://fleet.yourcompany.com/api/v1/health
+
+# Smoke tests
+bash infra/scripts/smoke-test.sh https://fleet.yourcompany.com
+
+# Check API logs for errors
+docker compose -f infra/docker/docker-compose.staging.yml logs --tail=100 api
+```
+
+**Post-upgrade checklist:**
+
+- [ ] Health endpoint returns `ok`
+- [ ] Smoke tests pass
+- [ ] Spot-test key flows: login, booking creation, assignment, trip start/end
+- [ ] No error spikes in Grafana (API error rate dashboard)
+- [ ] Confirm backup file is retained for at least 7 days
+
+### B. Rollback Procedure
+
+If the upgrade fails after migrations have been applied:
+
+> ⚠️ **Prisma migrations are forward-only.** Rolling back the code without rolling back the database only works if the old schema is still compatible with the new schema (additive changes only — new nullable columns are usually safe).
+
+**Step 1: Revert code to previous version**
+```bash
+# Restart with the previous image tag
+IMAGE_TAG=<previous-git-sha>
+docker compose -f infra/docker/docker-compose.staging.yml \
+  --env-file infra/docker/.env.staging up -d
+```
+
+**Step 2: If schema changes are not backward-compatible, restore the database**
+```bash
+# Stop the API to prevent writes during restore
+docker compose -f infra/docker/docker-compose.staging.yml stop api
+
+# Restore from backup
+cat /backups/${BACKUP_FILE} | docker exec -i \
+  $(docker compose -f infra/docker/docker-compose.staging.yml ps -q postgres) \
+  psql -U fleet_user fleet_db
+
+# Restart API with previous image
+docker compose -f infra/docker/docker-compose.staging.yml start api
+```
+
+**Step 3: Validate the rollback**
+```bash
+curl https://fleet.yourcompany.com/api/v1/health
+bash infra/scripts/smoke-test.sh https://fleet.yourcompany.com
+```
+
+---
+
+## Local Development Setup
+
+The sections below cover setting up a development environment on a developer's local machine.
 
 ---
 

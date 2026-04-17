@@ -470,4 +470,33 @@ export class UsersService {
     cells.push(current.trim());
     return cells;
   }
+
+  // ─── Push Token Registration ──────────────────────────────────────────────────
+
+  /**
+   * Store or update the FCM/APNs push token for the calling user's most recent
+   * active DeviceSession. Called by the mobile app on startup after login.
+   * Fire-and-forget — failure is non-critical for the user.
+   */
+  async registerPushToken(
+    userId: string,
+    pushToken: string,
+    deviceType: string,
+  ): Promise<{ ok: boolean }> {
+    // Update the most recent non-revoked session for this user
+    const session = await this.prisma.deviceSession.findFirst({
+      where: { userId, revokedAt: null },
+      orderBy: { lastActiveAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (session) {
+      await this.prisma.deviceSession.update({
+        where: { id: session.id },
+        data: { pushToken, deviceType, lastActiveAt: new Date() },
+      });
+    }
+
+    return { ok: true };
+  }
 }

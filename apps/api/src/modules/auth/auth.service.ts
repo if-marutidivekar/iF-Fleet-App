@@ -16,8 +16,19 @@ import { validatePinComplexity } from '../../common/utils/pin.validator';
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
 const COMPANY_DOMAIN = process.env['COMPANY_EMAIL_DOMAIN'] ?? 'company.com';
-// HMAC secret for deterministic PIN uniqueness checks — never used for auth
-const PIN_HMAC_SECRET = process.env['PIN_HMAC_SECRET'] ?? 'if-fleet-pin-hmac-dev';
+
+// HMAC secret for deterministic PIN uniqueness checks — never used for auth.
+// Falls back to a dev-only default in non-production environments.
+// Throws at startup in production so misconfiguration is caught immediately
+// rather than silently using a publicly-known key.
+const _rawPinSecret = process.env['PIN_HMAC_SECRET'];
+if (!_rawPinSecret && process.env['NODE_ENV'] === 'production') {
+  throw new Error(
+    'PIN_HMAC_SECRET env var is required in production. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"',
+  );
+}
+const PIN_HMAC_SECRET = _rawPinSecret ?? 'if-fleet-pin-hmac-dev';
 
 @Injectable()
 export class AuthService {

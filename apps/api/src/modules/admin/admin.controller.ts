@@ -58,7 +58,7 @@ class ResetPinDto {
   newPin!: string;
 }
 
-interface JwtUser { sub: string; role: UserRole; }
+interface JwtUser { id: string; email: string; role: UserRole; }
 
 /** All admin endpoints — JWT + ADMIN role required */
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -111,6 +111,6 @@ export class AdminController {
     @Body() dto: ResetPinDto,
     @CurrentUser() actor: JwtUser,
   ) {
-    return this.adminService.resetDriverPin(driverId, dto.newPin, actor.sub);
+    return this.adminService.resetDriverPin(driverId, dto.newPin, actor.id);
   }
 }

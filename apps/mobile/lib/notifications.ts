@@ -9,7 +9,7 @@ import { api } from './api';
  */
 export async function registerForPushNotifications(): Promise<void> {
   if (!Device.isDevice) {
-    console.log('[Push] Physical device required for push notifications');
+    // Simulators and Expo Go on non-physical devices cannot receive push notifications.
     return;
   }
 
@@ -22,12 +22,11 @@ export async function registerForPushNotifications(): Promise<void> {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('[Push] Permission not granted');
+    // User denied push notification permission — non-fatal, in-app alerts still work.
     return;
   }
 
   const token = (await Notifications.getExpoPushTokenAsync()).data;
-  console.log('[Push] Token:', token);
 
   // Register token with backend (fire-and-forget on app start)
   try {

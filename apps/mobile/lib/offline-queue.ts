@@ -1,7 +1,7 @@
 /**
  * Offline GPS ping queue.
  * Persists unsent location pings to AsyncStorage with idempotency keys.
- * On reconnect, call flushQueue() to batch-upload them.
+ * On reconnect, call flushQueue() to deliver them via POST /tracking/:tripId/location.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
@@ -30,7 +30,7 @@ export async function flushQueue(): Promise<void> {
   const queue: QueuedPing[] = JSON.parse(raw) as QueuedPing[];
   if (queue.length === 0) return;
 
-  // Group by tripId for batch upload
+  // Group by tripId to process each trip's pings sequentially
   const byTrip = queue.reduce<Record<string, QueuedPing[]>>((acc, p) => {
     if (!acc[p.tripId]) acc[p.tripId] = [];
     acc[p.tripId]!.push(p);
@@ -40,11 +40,19 @@ export async function flushQueue(): Promise<void> {
   const errors: QueuedPing[] = [];
 
   for (const [tripId, pings] of Object.entries(byTrip)) {
-    try {
-      await api.post(`/trips/${tripId}/location/batch`, { pings });
-    } catch {
-      // Keep failed pings for retry
-      errors.push(...pings);
+    for (const ping of pings) {
+      try {
+        await api.post(`/tracking/${tripId}/location`, {
+          latitude: ping.latitude,
+          longitude: ping.longitude,
+          accuracy: ping.accuracy,
+          capturedAt: ping.capturedAt,
+        });
+      } catch {
+        // Keep failed ping for retry; stop processing remaining pings for this trip
+        // to preserve ordering — subsequent pings depend on prior ones being recorded.
+        errors.push(ping);
+      }
     }
   }
 

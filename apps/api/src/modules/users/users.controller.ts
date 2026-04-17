@@ -6,7 +6,10 @@ import {
   Param,
   Body,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsIn } from 'class-validator';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -22,6 +25,11 @@ interface JwtUser {
   id: string;
   email: string;
   role: UserRole;
+}
+
+class RegisterPushTokenDto {
+  @IsString() @IsNotEmpty() pushToken!: string;
+  @IsString() @IsIn(['ios', 'android', 'web']) deviceType!: string;
 }
 
 @ApiTags('Users')
@@ -48,6 +56,13 @@ export class UsersController {
   @ApiOperation({ summary: 'Update own profile (firstName, lastName, employeeId, department, mobileNumber)' })
   updateMe(@Body() dto: UpdateMyProfileDto, @CurrentUser() user: JwtUser) {
     return this.usersService.updateMyProfile(user.id, dto);
+  }
+
+  @Post('me/push-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Register or update device push notification token' })
+  registerPushToken(@Body() dto: RegisterPushTokenDto, @CurrentUser() user: JwtUser) {
+    return this.usersService.registerPushToken(user.id, dto.pushToken, dto.deviceType);
   }
 
   @Post('bulk-import')
