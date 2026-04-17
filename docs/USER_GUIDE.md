@@ -284,7 +284,7 @@ Once you have accepted an assignment and are ready to depart:
 
 1. Go to **Track** tab.
 2. Tap **Start Trip**.
-3. Enter the **starting odometer reading** (required).
+3. Enter the **starting odometer reading** (optional — leave blank if not applicable).
 4. Tap **Confirm Start**.
 
 The booking status changes to **In Trip** and the vehicle status changes to **In Trip**.
@@ -298,17 +298,17 @@ The Track tab shows:
 
 #### Logging Fuel
 
-If you refuel during a trip:
+Fuel logs are optional — add one if you refuel during the trip.
 
 1. Tap **Add Fuel Log** on the Track tab.
-2. Enter: fuel volume (litres), cost (optional), current odometer reading.
+2. Enter: fuel volume (litres), cost (optional), current odometer reading (optional).
 3. Add receipt reference if required.
 4. Tap **Save**.
 
 #### Completing a Trip
 
 1. Tap **Complete Trip** on the Track tab.
-2. Enter the **ending odometer reading**.
+2. Enter the **ending odometer reading** (optional — leave blank if not applicable).
 3. Add any remarks (optional).
 4. Tap **Confirm Complete**.
 
@@ -437,10 +437,23 @@ The vehicle returns to **Available** status.
 
 #### Current Location Column
 
-The Fleet Master table shows each vehicle's current location:
-- If the driver has set a preset location → shows the preset name
-- If the driver entered a custom address → shows that address
-- If no location set → shows `—`
+The Fleet Master table shows each vehicle's current location (the vehicle's own location record, which is always kept in sync):
+- If the vehicle has a preset location set → shows the preset name
+- If a custom address was entered → shows that address
+- If no location has been set yet → shows `—`
+
+Location is updated automatically when: the assigned driver updates their location, a trip starts (set to pickup point), or a trip ends (set to dropoff point).
+
+#### Setting a Vehicle's Location (Admin — Unassigned Vehicles Only)
+
+For vehicles with **no fleet-assigned driver** that are not `ASSIGNED` or `In Trip`:
+
+1. Find the vehicle row in Fleet Master.
+2. Click **Set Location** (appears only when eligible).
+3. Choose a preset location from the dropdown, or enter a custom address.
+4. Click **Save**.
+
+> This option is hidden when a driver is assigned to the vehicle — in that case, location is managed by the driver from the Fleet tab.
 
 ---
 
@@ -508,7 +521,7 @@ For **Approved** bookings without an assignment:
 
 1. Click the booking in the queue.
 2. Click **Assign**.
-3. Select a **Vehicle** (only Available vehicles shown).
+3. Select a **Vehicle** — the dropdown shows `AVAILABLE` vehicles plus `ASSIGNED` vehicles that have no conflicting active booking, filtered to the booking's pickup location. Each option shows the vehicle's current location.
 4. Select a **Driver** (only shift-ready drivers shown).
 5. Confirm.
 
@@ -593,7 +606,7 @@ A: Go to Home tab → assignment card → Cancel Assignment. Enter a reason. The
 A: You cannot leave a vehicle while a trip is active. Complete or cancel the active trip first.
 
 **Q: The Complete Trip button gives an error.**
-A: Ensure you entered a valid odometer reading and that your internet connection is stable. The app will retry the request automatically once connected.
+A: Ensure your internet connection is stable — the app will retry automatically once connected. Odometer readings are optional, so leaving them blank is fine. If the error persists, check the Alerts tab for a system message or contact your admin.
 
 **Q: As admin, the "Assign Driver" dropdown is empty.**
 A: Only drivers with **Shift Ready = On** and no existing vehicle assignment appear. Check the driver's shift-ready status in Fleet Master.
