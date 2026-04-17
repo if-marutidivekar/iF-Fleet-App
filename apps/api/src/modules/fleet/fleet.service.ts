@@ -15,6 +15,7 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 import { AssignDriverDto } from './dto/assign-driver.dto';
 import { SetLocationDto } from './dto/set-location.dto';
 import { UserRole } from '@if-fleet/domain';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class FleetService {
@@ -264,18 +265,14 @@ export class FleetService {
   //   • if pickupPresetId provided: vehicle location must match the pickup preset
 
   async getVehiclesForBookingAssignment(pickupPresetId?: string) {
-    const where: Record<string, unknown> = {
+    const where: Prisma.VehicleWhereInput = {
       deletedAt: null,
       status: { in: ['AVAILABLE', 'ASSIGNED'] },
+      ...(pickupPresetId ? { currentLocationPresetId: pickupPresetId } : {}),
     };
 
-    // Step 37: filter by pickup location when specified
-    if (pickupPresetId) {
-      where['currentLocationPresetId'] = pickupPresetId;
-    }
-
     const vehicles = await this.prisma.vehicle.findMany({
-      where: where as Parameters<typeof this.prisma.vehicle.findMany>[0]['where'],
+      where,
       include: {
         currentLocationPreset: { select: { id: true, name: true } },
         currentDriver: {
