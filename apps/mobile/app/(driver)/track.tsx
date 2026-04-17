@@ -103,8 +103,10 @@ export default function ActiveTripScreen() {
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const startTrip = useMutation({
-    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer: number }) =>
-      api.post(`/trips/${assignmentId}/start`, { odometerStart: odometer }),
+    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer?: number }) =>
+      api.post(`/trips/${assignmentId}/start`, {
+        ...(odometer !== undefined ? { odometerStart: odometer } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['driver-trips'] });
       void qc.invalidateQueries({ queryKey: ['driver-assignments'] });
@@ -114,8 +116,11 @@ export default function ActiveTripScreen() {
   });
 
   const completeTrip = useMutation({
-    mutationFn: ({ id, odometer, note }: { id: string; odometer: number; note: string }) =>
-      api.post(`/trips/${id}/complete`, { odometerEnd: odometer, remarks: note }),
+    mutationFn: ({ id, odometer, note }: { id: string; odometer?: number; note: string }) =>
+      api.post(`/trips/${id}/complete`, {
+        ...(odometer !== undefined ? { odometerEnd: odometer } : {}),
+        remarks: note,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['driver-trips'] });
       void qc.invalidateQueries({ queryKey: ['driver-assignments'] });
@@ -140,29 +145,40 @@ export default function ActiveTripScreen() {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleStart = () => {
-    if (!odometerStart || isNaN(Number(odometerStart))) {
-      Alert.alert('Required', 'Please enter the current odometer reading.');
+    if (!readyToStart) return;
+    // Validate only if a value was entered — odometer is optional
+    if (odometerStart && isNaN(Number(odometerStart))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!readyToStart) return;
-    Alert.alert('Start Trip', `Starting trip with odometer at ${odometerStart} km. Confirm?`, [
+    const odo = odometerStart.trim() !== '' && !isNaN(Number(odometerStart))
+      ? Number(odometerStart)
+      : undefined;
+    const msg = odo !== undefined
+      ? `Starting trip — odometer at ${odo} km. Confirm?`
+      : 'Starting trip (no odometer reading entered). Confirm?';
+    Alert.alert('Start Trip', msg, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Start',
-        onPress: () => startTrip.mutate({ assignmentId: readyToStart.id, odometer: Number(odometerStart) }),
+        onPress: () => startTrip.mutate({ assignmentId: readyToStart.id, odometer: odo }),
       },
     ]);
   };
 
   const handleComplete = () => {
-    if (!odometerEnd || isNaN(Number(odometerEnd))) {
-      Alert.alert('Required', 'Please enter the ending odometer reading.');
+    if (!activeTrip) return;
+    // Validate only if a value was entered — odometer is optional
+    if (odometerEnd && isNaN(Number(odometerEnd))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!activeTrip) return;
+    const odo = odometerEnd.trim() !== '' && !isNaN(Number(odometerEnd))
+      ? Number(odometerEnd)
+      : undefined;
     Alert.alert('Complete Trip', 'Mark this trip as completed?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: Number(odometerEnd), note: remarks }) },
+      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: odo, note: remarks }) },
     ]);
   };
 
@@ -233,7 +249,7 @@ export default function ActiveTripScreen() {
 
           <View style={s.card}>
             <Text style={s.cardTitle}>▶ Start Trip</Text>
-            <Text style={s.inputLabel}>Odometer reading (km) *</Text>
+            <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
             <TextInput
               style={s.input}
               value={odometerStart}
@@ -273,7 +289,7 @@ export default function ActiveTripScreen() {
           {isStarted && (
             <View style={s.card}>
               <Text style={s.cardTitle}>✓ Complete Trip</Text>
-              <Text style={s.inputLabel}>Ending odometer (km) *</Text>
+              <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
               <TextInput style={s.input} value={odometerEnd} onChangeText={setOdometerEnd} placeholder="e.g. 12680" keyboardType="numeric" placeholderTextColor={C.light} />
               <Text style={s.inputLabel}>Remarks (optional)</Text>
               <TextInput style={[s.input, s.multiline]} value={remarks} onChangeText={setRemarks} placeholder="Any notes about the trip..." multiline numberOfLines={3} placeholderTextColor={C.light} />
