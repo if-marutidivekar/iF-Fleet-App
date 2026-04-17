@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   ScrollView, View, Text, TouchableOpacity, TextInput,
-  StyleSheet, ActivityIndicator, RefreshControl, Alert,
+  StyleSheet, ActivityIndicator, RefreshControl, Alert, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -130,9 +130,12 @@ export default function DriverHome() {
     >
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 16 }]}>
-        <View>
-          <Text style={s.greeting}>Good day,</Text>
-          <Text style={s.name}>{user?.name ?? 'Driver'}</Text>
+        <View style={s.headerBrand}>
+          <Image source={require('../../assets/logo.png')} style={s.headerLogo} resizeMode="contain" />
+          <View>
+            <Text style={s.greeting}>Good day,</Text>
+            <Text style={s.name}>{user?.name ?? 'Driver'}</Text>
+          </View>
         </View>
         <View style={s.rolePill}><Text style={s.roleText}>DRIVER</Text></View>
       </View>
@@ -395,6 +398,8 @@ function AssignmentCard({ assignment: a, children }: { assignment: Assignment; c
 const s = StyleSheet.create({
   container:    { flex: 1, backgroundColor: C.bg },
   header:       { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 0 },
+  headerBrand:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLogo:   { width: 32, height: 32 },
   // Vehicle banner
   vehicleBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primaryLight, borderBottomWidth: 1, borderBottomColor: C.primary + '33', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 },
   vehicleBannerWarn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 },

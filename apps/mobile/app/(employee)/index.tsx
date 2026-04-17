@@ -1,4 +1,4 @@
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,9 +57,12 @@ export default function EmployeeHome() {
     >
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 16 }]}>
-        <View>
-          <Text style={s.greeting}>Hello,</Text>
-          <Text style={s.name}>{user?.name ?? 'Employee'}</Text>
+        <View style={s.headerBrand}>
+          <Image source={require('../../assets/logo.png')} style={s.headerLogo} resizeMode="contain" />
+          <View>
+            <Text style={s.greeting}>Hello,</Text>
+            <Text style={s.name}>{user?.name ?? 'Employee'}</Text>
+          </View>
         </View>
         <TouchableOpacity style={s.bookBtn} onPress={() => router.push('/(employee)/new-booking')}>
           <Text style={s.bookBtnText}>+ Book Cab</Text>
@@ -140,7 +143,9 @@ function BookingCard({ booking: b, onCancel, cancelPending }: {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  header: { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 12 },
+  header:      { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 12 },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLogo:  { width: 32, height: 32 },
   greeting: { fontSize: 13, color: C.muted },
   name: { fontSize: 20, fontWeight: '800', color: C.text },
   bookBtn: { backgroundColor: C.primary, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },

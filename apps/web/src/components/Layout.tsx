@@ -132,8 +132,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             borderBottom: '1px solid rgba(255,255,255,0.08)',
           }}
         >
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
-            iF Fleet
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <img
+              src="/android-chrome-192x192.png"
+              alt="iF Fleet logo"
+              style={{ width: 28, height: 28, objectFit: 'contain', flexShrink: 0 }}
+            />
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
+              iF Fleet
+            </div>
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
             Fleet Management

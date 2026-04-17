@@ -53,12 +53,11 @@ export default function NewBookingScreen() {
   const [materialDesc, setMaterialDesc] = useState('');
 
   // Step 2 — Pickup, Drop & Time
-  // Default to first preset (not "Other address") once locations load
+  // Start with null (no selection) so the user must explicitly choose — matches web behaviour.
   const [pickupPresetId, setPickupPresetId] = useState<string | null>(null);
   const [pickupCustom, setPickupCustom] = useState('');
   const [dropoffPresetId, setDropoffPresetId] = useState<string | null>(null);
   const [dropoffCustom, setDropoffCustom] = useState('');
-  const [locationsInitialized, setLocationsInitialized] = useState(false);
   const [requestedAt, setRequestedAt] = useState(() => {
     const d = new Date(); d.setHours(d.getHours() + 1); d.setMinutes(0, 0, 0);
     return formatDateTimeLocal(d);
@@ -79,13 +78,6 @@ export default function NewBookingScreen() {
     queryFn: () => api.get<PresetLocation[]>('/fleet/locations?activeOnly=true').then(r => r.data),
     staleTime: 5 * 60_000,
   });
-
-  // Auto-select the first preset for pickup & drop once loaded (dropdown defaults)
-  if (!locationsInitialized && locations.length > 0) {
-    setLocationsInitialized(true);
-    if (pickupPresetId === null) setPickupPresetId(locations[0]!.id);
-    if (dropoffPresetId === null) setDropoffPresetId(locations[0]!.id);
-  }
 
   const pickupPresetParam =
     pickupPresetId && pickupPresetId !== '__other__' ? pickupPresetId : undefined;
