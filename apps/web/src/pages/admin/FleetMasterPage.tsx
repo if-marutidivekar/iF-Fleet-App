@@ -117,17 +117,14 @@ const selectStyle: React.CSSProperties = {
 // ─── Vehicles Tab ─────────────────────────────────────────────────────────────
 
 /** Compute vehicle's effective current location for the Fleet Master table.
- *  Step 31: Vehicle's own location fields are the primary source of truth (updated from all valid
- *  lifecycle events). Falls back to driver location, then last booking pickup for legacy data.
- *  Priority: (1) vehicle's own preset, (2) vehicle's free-text, (3) driver's preset, (4) driver's free-text, (5) last booking pickup, (6) —
+ *  Steps 1 & 5: Vehicle's own location fields are the SINGLE source of truth — always read
+ *  Vehicle.currentLocationPreset / currentLocationText, never the driver's profile location.
+ *  The backend keeps these fields in sync from all lifecycle events (driver location change,
+ *  trip start → pickup, trip end → dropoff, admin manual set).
  */
 function getVehicleCurrentLocation(v: Vehicle): string {
   if (v.currentLocationPreset?.name) return v.currentLocationPreset.name;
   if (v.currentLocationText) return v.currentLocationText;
-  if (v.currentDriver?.currentLocationPreset?.name) return v.currentDriver.currentLocationPreset.name;
-  if (v.currentDriver?.currentLocationText) return v.currentDriver.currentLocationText;
-  const lastPickup = v.assignments?.[0]?.booking?.pickupLabel;
-  if (lastPickup) return lastPickup;
   return '—';
 }
 
