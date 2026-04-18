@@ -115,17 +115,36 @@ export default function DriverHome() {
     declineMutation.mutate({ id, reason: declineReason });
   };
 
-  // Steps 1, 2, 5: Exclude cancelled bookings from actionable sections.
-  // Backend already sets decision=DECLINED when booking is cancelled, so these
-  // filters naturally exclude them — but we also guard by booking.status for safety.
-  const pending   = assignments.filter(a => a.decision === 'PENDING'   && a.booking.status !== 'CANCELLED');
-  const accepted  = assignments.filter(
-    a => a.decision === 'ACCEPTED' && a.trip?.status !== 'COMPLETED' && a.booking.status !== 'CANCELLED',
+  // Steps 1-3: Section filters aligned with booking/trip lifecycle.
+  // Backend sets decision=DECLINED when booking is cancelled, so filters below
+  // are doubly-guarded for safety.
+
+  // Awaiting driver accept/decline
+  const pending = assignments.filter(
+    a => a.decision === 'PENDING' && a.booking.status !== 'CANCELLED',
   );
-  const completed = assignments.filter(
-    a => a.decision === 'ACCEPTED' && a.trip?.status === 'COMPLETED',
+  // Driver accepted; trip NOT yet active (ready to start)
+  const approvedAssigned = assignments.filter(
+    a =>
+      a.decision === 'ACCEPTED' &&
+      a.booking.status !== 'CANCELLED' &&
+      (!a.trip || !['STARTED', 'IN_PROGRESS'].includes(a.trip.status)),
   );
-  // Step 5: Show cancelled bookings as a non-actionable info section
+  // Trip actively running (STARTED or IN_PROGRESS)
+  const inProgress = assignments.filter(
+    a =>
+      a.decision === 'ACCEPTED' &&
+      a.booking.status !== 'CANCELLED' &&
+      a.trip != null &&
+      ['STARTED', 'IN_PROGRESS'].includes(a.trip.status),
+  );
+  // Trip completed OR driver declined (excludes requester-cancelled bookings)
+  const completedDeclined = assignments.filter(
+    a =>
+      a.booking.status === 'COMPLETED' ||
+      (a.decision === 'DECLINED' && a.booking.status !== 'CANCELLED'),
+  );
+  // Requester-cancelled bookings — info only, no actions
   const cancelled = assignments.filter(a => a.booking.status === 'CANCELLED');
 
   return (
@@ -175,15 +194,14 @@ export default function DriverHome() {
 
       {isLoading && <ActivityIndicator color={C.primary} style={{ margin: 32 }} />}
 
-      {/* ── Pending assignments — action required ── */}
+      {/* ── Pending Assignments — action required (Steps 1-3) ── */}
       {pending.length > 0 && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>⚡ Action Required</Text>
+          <Text style={s.sectionTitle}>⚡ Pending Assignments</Text>
           {pending.map(a => {
             const isDeclining = decliningId === a.id;
             return (
               <AssignmentCard key={a.id} assignment={a}>
-                {/* Decline reason input */}
                 {isDeclining && (
                   <View style={s.declineBox}>
                     <Text style={s.declineLabel}>Reason for declining *</Text>
@@ -236,16 +254,14 @@ export default function DriverHome() {
         </View>
       )}
 
-      {/* ── Accepted assignments ── */}
-      {accepted.length > 0 && (
+      {/* ── Approved / Assigned — driver accepted, ready to start trip (Steps 1-3) ── */}
+      {approvedAssigned.length > 0 && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Assignments</Text>
-          {accepted.map(a => {
+          <Text style={s.sectionTitle}>Approved / Assigned</Text>
+          {approvedAssigned.map(a => {
             const isCancelling = cancellingId === a.id;
-            const hasTripStarted = a.trip?.status === 'STARTED' || a.trip?.status === 'IN_PROGRESS';
             return (
               <AssignmentCard key={a.id} assignment={a}>
-                {/* Cancel acceptance input */}
                 {isCancelling && (
                   <View style={[s.declineBox, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
                     <Text style={[s.declineLabel, { color: C.orange }]}>Cancel your acceptance?</Text>
@@ -263,12 +279,10 @@ export default function DriverHome() {
                     style={[s.btn, s.tripBtn]}
                     onPress={() => router.push('/(driver)/track')}
                   >
-                    <Text style={s.btnText}>
-                      {hasTripStarted ? '🚗 Continue Trip' : '▶ Start Trip'}
-                    </Text>
+                    <Text style={s.btnText}>▶ Start Trip</Text>
                   </TouchableOpacity>
-                  {/* Only allow cancel acceptance if trip hasn't started */}
-                  {!hasTripStarted && !a.trip && (
+                  {/* Cancel acceptance only while no trip exists yet */}
+                  {!a.trip && (
                     isCancelling ? (
                       <>
                         <TouchableOpacity
@@ -301,33 +315,61 @@ export default function DriverHome() {
         </View>
       )}
 
-      {/* ── Accepted Completed Trips ── */}
-      {completed.length > 0 && (
+      {/* ── In Progress — trip actively running (Steps 2-3) ── */}
+      {inProgress.length > 0 && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Completed Trips</Text>
-          {completed.map(a => (
-            <View key={a.id} style={[s.card, s.completedCard]}>
-              <View style={s.cardTop}>
-                <View>
-                  <Text style={s.vehicle}>🚗 {a.vehicle.vehicleNo} · {a.vehicle.type}</Text>
-                  <Text style={s.bookingNoText}>Req #{a.booking.bookingNo}</Text>
-                </View>
-                <Badge label="Completed" color={C.success} />
+          <Text style={s.sectionTitle}>🚗 In Progress</Text>
+          {inProgress.map(a => (
+            <AssignmentCard key={a.id} assignment={a}>
+              <View style={s.actionRow}>
+                <TouchableOpacity
+                  style={[s.btn, s.tripBtn]}
+                  onPress={() => router.push('/(driver)/track')}
+                >
+                  <Text style={s.btnText}>🚗 Continue Trip</Text>
+                </TouchableOpacity>
               </View>
-              {/* Requester */}
-              <RequesterBox requester={a.booking.requester} />
-              {/* Route */}
-              <RouteRow
-                pickup={a.booking.pickupLabel ?? a.booking.pickupCustomAddress ?? '—'}
-                dropoff={a.booking.dropoffLabel ?? a.booking.dropoffCustomAddress ?? '—'}
-              />
-              <Text style={s.time}>📅 {new Date(a.booking.requestedAt).toLocaleString()}</Text>
-            </View>
+            </AssignmentCard>
           ))}
         </View>
       )}
 
-      {/* ── Cancelled Bookings — info only, no actions (Steps 1, 2, 5) ── */}
+      {/* ── Completed / Declined — trip done or driver declined (Steps 2-3) ── */}
+      {completedDeclined.length > 0 && (
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Completed / Declined</Text>
+          {completedDeclined.map(a => {
+            const isCompleted = a.booking.status === 'COMPLETED';
+            return (
+              <View key={a.id} style={[s.card, isCompleted ? s.completedCard : s.declinedCard]}>
+                <View style={s.cardTop}>
+                  <View>
+                    <Text style={s.vehicle}>🚗 {a.vehicle.vehicleNo} · {a.vehicle.type}</Text>
+                    <Text style={s.bookingNoText}>Req #{a.booking.bookingNo}</Text>
+                  </View>
+                  <Badge
+                    label={isCompleted ? 'Completed' : 'Declined'}
+                    color={isCompleted ? C.success : C.danger}
+                  />
+                </View>
+                <RequesterBox requester={a.booking.requester} />
+                <RouteRow
+                  pickup={a.booking.pickupLabel ?? a.booking.pickupCustomAddress ?? '—'}
+                  dropoff={a.booking.dropoffLabel ?? a.booking.dropoffCustomAddress ?? '—'}
+                />
+                <Text style={s.time}>📅 {new Date(a.booking.requestedAt).toLocaleString()}</Text>
+                {a.declineReason && (
+                  <View style={s.reasonBox}>
+                    <Text style={s.reasonText}>Reason: {a.declineReason}</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* ── Cancelled Bookings — info only, no actions ── */}
       {cancelled.length > 0 && (
         <View style={s.section}>
           <Text style={s.sectionTitle}>Cancelled Bookings</Text>
@@ -356,7 +398,12 @@ export default function DriverHome() {
         </View>
       )}
 
-      {!isLoading && pending.length === 0 && accepted.length === 0 && completed.length === 0 && cancelled.length === 0 && (
+      {!isLoading &&
+        pending.length === 0 &&
+        approvedAssigned.length === 0 &&
+        inProgress.length === 0 &&
+        completedDeclined.length === 0 &&
+        cancelled.length === 0 && (
         <View style={s.empty}>
           <Text style={s.emptyIcon}>🛑</Text>
           <Text style={s.emptyTitle}>No active assignments</Text>
@@ -450,6 +497,7 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
   card:         { backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   completedCard: { borderWidth: 1, borderColor: C.successLight },
+  declinedCard:  { borderWidth: 1, borderColor: '#fecaca' },
   cancelledCard: { borderWidth: 1, borderColor: '#e2e8f0', opacity: 0.85 },
   cardTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   vehicle:      { fontSize: 13, fontWeight: '600', color: C.muted },
