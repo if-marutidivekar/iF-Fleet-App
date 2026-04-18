@@ -205,6 +205,8 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
       {/* Top row: decision badge */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Badge label={decision} color={decisionColor} />
+        {/* Step 4: Show BOOKING CANCELLED badge when requester cancelled the booking */}
+        {booking.status === 'CANCELLED' && <Badge label="BOOKING CANCELLED" color="#dc2626" />}
         {tripActive && <Badge label="IN PROGRESS" color="#f97316" />}
         {tripCompleted && <Badge label="TRIP COMPLETED" color="#059669" />}
         <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>
@@ -278,8 +280,25 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
         </div>
       )}
 
-      {/* Actions for PENDING */}
-      {decision === 'PENDING' && !tripCompleted && (
+      {/* Steps 1, 2, 5: Cancelled booking info panel — no action required */}
+      {booking.status === 'CANCELLED' && (
+        <div
+          style={{
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            padding: '10px 14px',
+            fontSize: 13,
+            color: '#dc2626',
+            fontWeight: 500,
+          }}
+        >
+          🚫 This booking was cancelled by the requester. No further action is required.
+        </div>
+      )}
+
+      {/* Actions for PENDING — Step 5: hidden when booking is cancelled */}
+      {decision === 'PENDING' && !tripCompleted && booking.status !== 'CANCELLED' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
@@ -361,8 +380,8 @@ function AssignmentCard({ assignment }: { assignment: Assignment }) {
         </div>
       )}
 
-      {/* Trip controls for ACCEPTED */}
-      {decision === 'ACCEPTED' && (
+      {/* Trip controls for ACCEPTED — Step 2: hidden when booking is cancelled (cannot start trip) */}
+      {decision === 'ACCEPTED' && booking.status !== 'CANCELLED' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* No trip yet — show Start Trip + Cancel option */}
@@ -711,53 +730,61 @@ export function ActiveTripPage() {
   );
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '32px 24px' }}>
+    // Steps 6-10: Internal scroll layout — header fixed, content area scrolls
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
 
-      {/* AUTO MODE: Available trips section */}
-      {isAutoMode && availableTrips.length > 0 && (
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
-              🚦 Available Trips
-            </h2>
-            <span style={{ fontSize: 12, background: '#2563eb1a', color: '#2563eb', borderRadius: 99, padding: '2px 10px', fontWeight: 700 }}>
-              {availableTrips.length}
-            </span>
+      {/* Fixed page header */}
+      <div style={{ flexShrink: 0, padding: '24px 24px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
+          My Assignments
+        </h1>
+      </div>
+
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
+
+        {/* AUTO MODE: Available trips section */}
+        {isAutoMode && availableTrips.length > 0 && (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+                🚦 Available Trips
+              </h2>
+              <span style={{ fontSize: 12, background: '#2563eb1a', color: '#2563eb', borderRadius: 99, padding: '2px 10px', fontWeight: 700 }}>
+                {availableTrips.length}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {availableTrips.map((t) => (
+                <AvailableTripCard key={t.id} booking={t} vehicles={vehicles} />
+              ))}
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {availableTrips.map((t) => (
-              <AvailableTripCard key={t.id} booking={t} vehicles={vehicles} />
+        )}
+
+        {isLoading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</div>
+        ) : sorted.length === 0 ? (
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              padding: 40,
+              textAlign: 'center',
+              color: '#94a3b8',
+            }}
+          >
+            No assignments yet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {sorted.map((a) => (
+              <AssignmentCard key={a.id} assignment={a} />
             ))}
           </div>
-        </div>
-      )}
-
-      <h1 style={{ margin: '0 0 24px', fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
-        My Assignments
-      </h1>
-
-      {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</div>
-      ) : sorted.length === 0 ? (
-        <div
-          style={{
-            background: '#fff',
-            border: '1px solid #e2e8f0',
-            borderRadius: 12,
-            padding: 40,
-            textAlign: 'center',
-            color: '#94a3b8',
-          }}
-        >
-          No assignments yet.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {sorted.map((a) => (
-            <AssignmentCard key={a.id} assignment={a} />
-          ))}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -45,6 +45,8 @@ interface Assignment {
     pickupCustomAddress?: string;
     dropoffLabel?: string;
     dropoffCustomAddress?: string;
+    // Step 5: needed to hide action buttons when requester cancelled
+    status: string;
     requester: Requester;
   };
   vehicle: { vehicleNo: string; type: string };
@@ -113,14 +115,18 @@ export default function DriverHome() {
     declineMutation.mutate({ id, reason: declineReason });
   };
 
-  const pending   = assignments.filter(a => a.decision === 'PENDING');
-  // Accepted: only those whose trip is not completed (or no trip yet)
+  // Steps 1, 2, 5: Exclude cancelled bookings from actionable sections.
+  // Backend already sets decision=DECLINED when booking is cancelled, so these
+  // filters naturally exclude them — but we also guard by booking.status for safety.
+  const pending   = assignments.filter(a => a.decision === 'PENDING'   && a.booking.status !== 'CANCELLED');
   const accepted  = assignments.filter(
-    a => a.decision === 'ACCEPTED' && a.trip?.status !== 'COMPLETED',
+    a => a.decision === 'ACCEPTED' && a.trip?.status !== 'COMPLETED' && a.booking.status !== 'CANCELLED',
   );
   const completed = assignments.filter(
     a => a.decision === 'ACCEPTED' && a.trip?.status === 'COMPLETED',
   );
+  // Step 5: Show cancelled bookings as a non-actionable info section
+  const cancelled = assignments.filter(a => a.booking.status === 'CANCELLED');
 
   return (
     <ScrollView
@@ -321,7 +327,36 @@ export default function DriverHome() {
         </View>
       )}
 
-      {!isLoading && pending.length === 0 && accepted.length === 0 && completed.length === 0 && (
+      {/* ── Cancelled Bookings — info only, no actions (Steps 1, 2, 5) ── */}
+      {cancelled.length > 0 && (
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Cancelled Bookings</Text>
+          {cancelled.map(a => (
+            <View key={a.id} style={[s.card, s.cancelledCard]}>
+              <View style={s.cardTop}>
+                <View>
+                  <Text style={s.vehicle}>🚗 {a.vehicle.vehicleNo} · {a.vehicle.type}</Text>
+                  <Text style={s.bookingNoText}>Req #{a.booking.bookingNo}</Text>
+                </View>
+                <Badge label="Cancelled" color="#6b7280" />
+              </View>
+              <RequesterBox requester={a.booking.requester} />
+              <RouteRow
+                pickup={a.booking.pickupLabel ?? a.booking.pickupCustomAddress ?? '—'}
+                dropoff={a.booking.dropoffLabel ?? a.booking.dropoffCustomAddress ?? '—'}
+              />
+              <Text style={s.time}>📅 {new Date(a.booking.requestedAt).toLocaleString()}</Text>
+              <View style={[s.reasonBox, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                <Text style={[s.reasonText, { color: '#64748b' }]}>
+                  🚫 This booking was cancelled by the requester. No action required.
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {!isLoading && pending.length === 0 && accepted.length === 0 && completed.length === 0 && cancelled.length === 0 && (
         <View style={s.empty}>
           <Text style={s.emptyIcon}>🛑</Text>
           <Text style={s.emptyTitle}>No active assignments</Text>
@@ -414,7 +449,8 @@ const s = StyleSheet.create({
   section:      { marginHorizontal: 16, marginBottom: 16 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
   card:         { backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
-  completedCard:{ borderWidth: 1, borderColor: C.successLight },
+  completedCard: { borderWidth: 1, borderColor: C.successLight },
+  cancelledCard: { borderWidth: 1, borderColor: '#e2e8f0', opacity: 0.85 },
   cardTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   vehicle:      { fontSize: 13, fontWeight: '600', color: C.muted },
   bookingNoText:{ fontSize: 11, color: C.light, marginTop: 2 },

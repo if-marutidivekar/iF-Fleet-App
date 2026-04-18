@@ -247,6 +247,10 @@ export class BookingsService {
 
     const cancellableStatuses = ['PENDING_APPROVAL', 'APPROVED', 'ASSIGNED'];
     if (!cancellableStatuses.includes(booking.status)) {
+      // Step 3: Explicit message when trip has already started
+      if (booking.status === 'IN_TRIP') {
+        throw new BadRequestException('Booking cannot be cancelled after the trip has already started');
+      }
       throw new BadRequestException('Booking cannot be cancelled in its current state');
     }
 
@@ -265,6 +269,21 @@ export class BookingsService {
         });
       }
       // If vehicle has a fleet driver → leave status ASSIGNED
+
+      // Steps 1, 2, 5: Decline the active assignment so the Driver immediately
+      // sees the booking as cancelled — not as a pending or accepted action item.
+      // This ensures cancellation propagates to Driver view in real time for both
+      // pre-accept (PENDING) and post-accept (ACCEPTED) scenarios.
+      if (['PENDING', 'ACCEPTED'].includes(booking.assignment.decision)) {
+        await this.prisma.assignment.update({
+          where: { id: booking.assignment.id },
+          data: {
+            decision: 'DECLINED',
+            decisionAt: new Date(),
+            declineReason: 'Booking cancelled by requester',
+          },
+        });
+      }
     }
 
     return this.prisma.booking.update({

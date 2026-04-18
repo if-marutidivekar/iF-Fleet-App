@@ -16,7 +16,8 @@ interface Booking {
   requestedAt: string;
   pickupLabel?: string; pickupCustomAddress?: string;
   dropoffLabel?: string; dropoffCustomAddress?: string;
-  assignment?: { driver?: { user: { name: string } }; vehicle?: { vehicleNo: string } };
+  // Step 4: decision needed to show ASSIGNED-ACCEPTED vs ASSIGNED-PENDING
+  assignment?: { decision?: string; driver?: { user: { name: string } }; vehicle?: { vehicleNo: string } };
 }
 
 const ACTIVE = ['PENDING_APPROVAL', 'APPROVED', 'ASSIGNED', 'IN_TRIP'];
@@ -36,7 +37,11 @@ export default function EmployeeHome() {
   const cancel = useMutation({
     mutationFn: (id: string) => api.patch(`/bookings/${id}/cancel`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-bookings'] }),
-    onError: () => Alert.alert('Error', 'Could not cancel booking.'),
+    // Step 3: Show backend message (e.g. "cannot cancel after trip started")
+    onError: (e: any) => {
+      const msg = (e as any)?.response?.data?.message ?? 'Could not cancel booking.';
+      Alert.alert('Cannot Cancel', msg);
+    },
   });
 
   const handleCancel = (id: string) => {
@@ -112,14 +117,26 @@ function BookingCard({ booking: b, onCancel, cancelPending }: {
 }) {
   const pickup  = b.pickupLabel  ?? b.pickupCustomAddress  ?? '—';
   const dropoff = b.dropoffLabel ?? b.dropoffCustomAddress ?? '—';
-  const color   = STATUS_COLOR[b.status] ?? C.muted;
   const canCancel = ['PENDING_APPROVAL', 'APPROVED', 'ASSIGNED'].includes(b.status);
+
+  // Step 4: Compute effective status label and color for ASSIGNED sub-states
+  let effectiveLabel = STATUS_LABEL[b.status] ?? b.status.replace(/_/g, ' ');
+  let effectiveColor = STATUS_COLOR[b.status] ?? C.muted;
+  if (b.status === 'ASSIGNED' && b.assignment?.decision) {
+    if (b.assignment.decision === 'ACCEPTED') {
+      effectiveLabel = 'Assigned · Accepted';
+      effectiveColor = '#059669'; // green
+    } else if (b.assignment.decision === 'PENDING') {
+      effectiveLabel = 'Assigned · Pending';
+      effectiveColor = '#d97706'; // amber
+    }
+  }
 
   return (
     <View style={s.card}>
       <View style={s.cardRow}>
         <Text style={s.transport}>{b.transportType.replace(/_/g, ' ')}</Text>
-        <Badge label={STATUS_LABEL[b.status] ?? b.status} color={color} />
+        <Badge label={effectiveLabel} color={effectiveColor} />
       </View>
       <View style={s.routeRow}>
         <View style={s.dot} />
