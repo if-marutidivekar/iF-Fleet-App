@@ -54,6 +54,14 @@ export default function EmployeeHome() {
   const active  = bookings.filter(b => ACTIVE.includes(b.status));
   const inTrip  = bookings.filter(b => b.status === 'IN_TRIP');
 
+  // Steps 10, 12: Dashboard counts — same logic as Web EmployeeDashboard
+  const counts = {
+    pending:  bookings.filter(b => b.status === 'PENDING_APPROVAL').length,
+    approved: bookings.filter(b => b.status === 'APPROVED' || b.status === 'ASSIGNED').length,
+    inProgress: bookings.filter(b => b.status === 'IN_TRIP').length,
+    completed:  bookings.filter(b => b.status === 'COMPLETED').length,
+  };
+
   return (
     <ScrollView
       style={s.container}
@@ -72,6 +80,28 @@ export default function EmployeeHome() {
         <TouchableOpacity style={s.bookBtn} onPress={() => router.push('/(employee)/new-booking')}>
           <Text style={s.bookBtnText}>+ Book Cab</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Steps 10, 12: Dashboard summary cards — same 4 cards as Web EmployeeDashboard */}
+      <View style={s.statsSection}>
+        <View style={s.statsRow}>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.warning }]}>{counts.pending}</Text>
+            <Text style={s.statLabel}>Pending Approval</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.primary }]}>{counts.approved}</Text>
+            <Text style={s.statLabel}>Approved / Assigned</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.orange }]}>{counts.inProgress}</Text>
+            <Text style={s.statLabel}>In Progress</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.success }]}>{counts.completed}</Text>
+            <Text style={s.statLabel}>Completed</Text>
+          </View>
+        </View>
       </View>
 
       {isLoading && <ActivityIndicator color={C.primary} style={{ margin: 32 }} />}
@@ -160,13 +190,19 @@ function BookingCard({ booking: b, onCancel, cancelPending }: {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  header:      { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 12 },
+  header:      { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border },
   headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerLogo:  { width: 32, height: 32 },
   greeting: { fontSize: 13, color: C.muted },
   name: { fontSize: 20, fontWeight: '800', color: C.text },
   bookBtn: { backgroundColor: C.primary, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
   bookBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  // Dashboard summary cards — Steps 10, 12
+  statsSection: { marginHorizontal: 16, marginTop: 14, marginBottom: 4 },
+  statsRow: { flexDirection: 'row', gap: 8 },
+  statCard: { flex: 1, backgroundColor: C.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 8, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  statValue: { fontSize: 22, fontWeight: '800', marginBottom: 3 },
+  statLabel: { fontSize: 10, color: C.muted, fontWeight: '600', textAlign: 'center' },
   inTripBanner: { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.orange, borderRadius: 14, padding: 16 },
   inTripTitle: { fontSize: 15, fontWeight: '800', color: '#fff', marginBottom: 4 },
   inTripRoute: { fontSize: 13, color: '#fff', marginBottom: 3 },

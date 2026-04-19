@@ -254,10 +254,10 @@ export default function DriverHome() {
         </View>
       )}
 
-      {/* ── Approved / Assigned — driver accepted, ready to start trip (Steps 1-3) ── */}
+      {/* ── Assigned — driver accepted, ready to start trip (Steps 7, 11) ── */}
       {approvedAssigned.length > 0 && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Approved / Assigned</Text>
+          <Text style={s.sectionTitle}>Assigned</Text>
           {approvedAssigned.map(a => {
             const isCancelling = cancellingId === a.id;
             return (

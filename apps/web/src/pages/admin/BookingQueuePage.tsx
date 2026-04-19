@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 
 interface Booking {
@@ -614,7 +614,11 @@ function BookingRow({
 
 export function BookingQueuePage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('ALL');
+  // Step 2: Read initialTab from Admin Dashboard card navigation state
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<string>(
+    (location.state as { initialTab?: string } | null)?.initialTab ?? 'ALL',
+  );
 
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<Booking[]>({
     queryKey: ['bookings-admin'],

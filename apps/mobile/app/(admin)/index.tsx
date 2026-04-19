@@ -9,7 +9,6 @@ import { C, STATUS_COLOR, STATUS_LABEL } from '../../lib/theme';
 
 interface Booking { id: string; status: string; transportType: string; requestedAt: string; requester: { name: string }; pickupLabel?: string; pickupCustomAddress?: string; dropoffLabel?: string; dropoffCustomAddress?: string; }
 interface Trip { id: string; status: string; assignment: { booking: { pickupLabel?: string; dropoffLabel?: string }; driver: { user: { name: string } }; vehicle: { vehicleNo: string } }; actualStartAt?: string; }
-interface Vehicle { id: string; status: string; vehicleNo: string; }
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -29,23 +28,30 @@ export default function AdminDashboard() {
     refetchInterval: 30_000,
   });
 
-  const { data: vehicles = [] } = useQuery<Vehicle[]>({
-    queryKey: ['admin-vehicles'],
-    queryFn: () => api.get<Vehicle[]>('/fleet/vehicles').then(r => r.data),
-    refetchInterval: 60_000,
-  });
-
   const approve = useMutation({
     mutationFn: (id: string) => api.patch(`/bookings/${id}/approve`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-bookings'] }),
   });
 
+  // Steps 9, 12: Booking status counts — same source as Web AdminDashboard
+  const counts = {
+    all:             bookings.length,
+    pendingApproval: bookings.filter(b => b.status === 'PENDING_APPROVAL').length,
+    approved:        bookings.filter(b => b.status === 'APPROVED').length,
+    assigned:        bookings.filter(b => b.status === 'ASSIGNED').length,
+    inTrip:          bookings.filter(b => b.status === 'IN_TRIP').length,
+    completed:       bookings.filter(b => b.status === 'COMPLETED').length,
+  };
+
   const pending = bookings.filter(b => b.status === 'PENDING_APPROVAL');
   const activeTrips = trips.filter(t => ['STARTED', 'IN_PROGRESS'].includes(t.status));
-  const availableVehicles = vehicles.filter(v => v.status === 'AVAILABLE');
 
   const isLoading = bl || tl;
   const onRefresh = () => { void refetchB(); void refetchT(); };
+
+  /** Navigate to queue screen with the matching tab filter */
+  const goToQueue = (tab: string) =>
+    router.push({ pathname: '/(admin)/queue', params: { tab } });
 
   return (
     <ScrollView
@@ -65,11 +71,35 @@ export default function AdminDashboard() {
         <View style={s.roleBadge}><Text style={s.roleText}>ADMIN</Text></View>
       </View>
 
-      {/* Stats row */}
-      <View style={s.statsRow}>
-        <StatCard label="Pending" value={pending.length} color={C.warning} emoji="⏳" />
-        <StatCard label="Active Trips" value={activeTrips.length} color={C.orange} emoji="🚗" />
-        <StatCard label="Available" value={availableVehicles.length} color={C.success} emoji="🚙" />
+      {/* Steps 9, 12 — Booking Status Cards (6 cards matching Web AdminDashboard) */}
+      <View style={s.cardsSection}>
+        <Text style={s.cardsSectionLabel}>Bookings Overview</Text>
+        <View style={s.cardsGrid}>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('ALL')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: '#0f172a' }]}>{counts.all}</Text>
+            <Text style={s.statLabel}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('PENDING_APPROVAL')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: C.warning }]}>{counts.pendingApproval}</Text>
+            <Text style={s.statLabel}>Pending Approval</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('APPROVED')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: C.primary }]}>{counts.approved}</Text>
+            <Text style={s.statLabel}>Approved</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('ASSIGNED')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: C.purple }]}>{counts.assigned}</Text>
+            <Text style={s.statLabel}>Assigned</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('IN_TRIP')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: C.orange }]}>{counts.inTrip}</Text>
+            <Text style={s.statLabel}>In Trip</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.statCard} onPress={() => goToQueue('COMPLETED')} activeOpacity={0.75}>
+            <Text style={[s.statValue, { color: C.success }]}>{counts.completed}</Text>
+            <Text style={s.statLabel}>Completed</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Pending bookings quick-action */}
@@ -77,7 +107,7 @@ export default function AdminDashboard() {
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>Pending Approvals</Text>
           {pending.length > 3 && (
-            <TouchableOpacity onPress={() => router.push('/(admin)/book')}>
+            <TouchableOpacity onPress={() => goToQueue('PENDING_APPROVAL')}>
               <Text style={s.seeAll}>See all {pending.length} →</Text>
             </TouchableOpacity>
           )}
@@ -106,7 +136,7 @@ export default function AdminDashboard() {
                 <TouchableOpacity style={[s.actionBtn, s.approveBtn]} onPress={() => approve.mutate(b.id)} disabled={approve.isPending}>
                   <Text style={s.actionText}>{approve.isPending ? '…' : '✓ Approve'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.actionBtn, s.rejectBtn]} onPress={() => router.push('/(admin)/book')}>
+                <TouchableOpacity style={[s.actionBtn, s.rejectBtn]} onPress={() => goToQueue('PENDING_APPROVAL')}>
                   <Text style={s.actionText}>✗ Reject →</Text>
                 </TouchableOpacity>
               </View>
@@ -147,16 +177,6 @@ export default function AdminDashboard() {
   );
 }
 
-function StatCard({ label, value, color, emoji }: { label: string; value: number; color: string; emoji: string }) {
-  return (
-    <View style={[s.statCard, { borderTopColor: color, borderTopWidth: 3 }]}>
-      <Text style={s.statEmoji}>{emoji}</Text>
-      <Text style={[s.statValue, { color }]}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   header:      { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border },
@@ -166,12 +186,14 @@ const s = StyleSheet.create({
   name: { fontSize: 20, fontWeight: '800', color: C.text },
   roleBadge: { backgroundColor: C.purpleLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   roleText: { color: C.purple, fontWeight: '800', fontSize: 12 },
-  statsRow: { flexDirection: 'row', gap: 10, margin: 16 },
-  statCard: { flex: 1, backgroundColor: C.surface, borderRadius: 12, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  statEmoji: { fontSize: 22, marginBottom: 4 },
-  statValue: { fontSize: 26, fontWeight: '800' },
-  statLabel: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 2 },
-  section: { marginHorizontal: 16, marginBottom: 16 },
+  // Booking status cards grid
+  cardsSection: { margin: 16, marginBottom: 4 },
+  cardsSectionLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 },
+  cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  statCard: { width: '30%', flexGrow: 1, backgroundColor: C.surface, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  statValue: { fontSize: 26, fontWeight: '800', marginBottom: 3 },
+  statLabel: { fontSize: 11, color: C.muted, fontWeight: '600', textAlign: 'center' },
+  section: { marginHorizontal: 16, marginBottom: 16, marginTop: 12 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: C.text },
   seeAll: { fontSize: 13, color: C.primary, fontWeight: '600' },

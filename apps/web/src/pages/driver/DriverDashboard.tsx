@@ -87,8 +87,9 @@ export function DriverDashboard() {
       (a) => a.decision === 'PENDING' && a.booking.status !== 'CANCELLED',
     ).length,
 
-    // Driver accepted; trip has NOT started yet — ready to drive
-    approvedAssigned: assignments.filter(
+    // Steps 4-7: "Assigned" — driver accepted; trip has NOT started yet — ready to drive.
+    // Renamed from "Approved / Assigned". Count goes to 0 once trip completes.
+    assigned: assignments.filter(
       (a) =>
         a.decision === 'ACCEPTED' &&
         a.booking.status !== 'CANCELLED' &&
@@ -219,10 +220,10 @@ export function DriverDashboard() {
 
         {/* Stat Cards — Steps 1-3: Aligned with booking/trip lifecycle */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 32 }}>
-          <StatCard label="Pending Assignments" count={counts.pending}          color="#d97706" />
-          <StatCard label="Approved / Assigned"  count={counts.approvedAssigned} color="#2563eb" />
-          <StatCard label="In Progress"           count={counts.inProgress}       color="#f97316" />
-          <StatCard label="Completed / Declined"  count={counts.completedDeclined} color="#059669" />
+          <StatCard label="Pending Assignments" count={counts.pending}           color="#d97706" />
+          <StatCard label="Assigned"             count={counts.assigned}          color="#2563eb" />
+          <StatCard label="In Progress"          count={counts.inProgress}        color="#f97316" />
+          <StatCard label="Completed / Declined" count={counts.completedDeclined} color="#059669" />
         </div>
 
         {/* Current / Next Assignment Preview */}
