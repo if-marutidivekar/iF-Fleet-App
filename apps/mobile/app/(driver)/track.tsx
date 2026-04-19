@@ -25,6 +25,7 @@ interface BookingInfo {
   dropoffLabel?: string;
   dropoffCustomAddress?: string;
   requestedAt: string;
+  status: string;
   requester: Requester;
 }
 
@@ -89,22 +90,26 @@ export default function ActiveTripScreen() {
     void refetchTrips();
   };
 
-  // Find accepted assignment that hasn't had a trip started yet
+  // Find accepted assignment that hasn't had a trip started yet.
+  // Steps 4-5: require booking.status === 'ASSIGNED' so completed/historical
+  // bookings never appear here as "ready to start".
   const readyToStart = assignments.find(
-    a => a.decision === 'ACCEPTED' && (!a.trip || a.trip.status === 'CREATED'),
+    a =>
+      a.booking.status === 'ASSIGNED' &&
+      a.decision === 'ACCEPTED' &&
+      (!a.trip || a.trip.status === 'CREATED'),
   );
 
   // Active trip: STARTED or IN_PROGRESS
   const activeTrip = trips.find(t => ['STARTED', 'IN_PROGRESS'].includes(t.status));
 
-  // Completed trips (for history at bottom)
-  const completedTrips = trips.filter(t => t.status === 'COMPLETED');
-
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const startTrip = useMutation({
-    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer: number }) =>
-      api.post(`/trips/${assignmentId}/start`, { odometerStart: odometer }),
+    mutationFn: ({ assignmentId, odometer }: { assignmentId: string; odometer?: number }) =>
+      api.post(`/trips/${assignmentId}/start`, {
+        ...(odometer !== undefined ? { odometerStart: odometer } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['driver-trips'] });
       void qc.invalidateQueries({ queryKey: ['driver-assignments'] });
@@ -114,8 +119,11 @@ export default function ActiveTripScreen() {
   });
 
   const completeTrip = useMutation({
-    mutationFn: ({ id, odometer, note }: { id: string; odometer: number; note: string }) =>
-      api.post(`/trips/${id}/complete`, { odometerEnd: odometer, remarks: note }),
+    mutationFn: ({ id, odometer, note }: { id: string; odometer?: number; note: string }) =>
+      api.post(`/trips/${id}/complete`, {
+        ...(odometer !== undefined ? { odometerEnd: odometer } : {}),
+        remarks: note,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['driver-trips'] });
       void qc.invalidateQueries({ queryKey: ['driver-assignments'] });
@@ -140,29 +148,40 @@ export default function ActiveTripScreen() {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleStart = () => {
-    if (!odometerStart || isNaN(Number(odometerStart))) {
-      Alert.alert('Required', 'Please enter the current odometer reading.');
+    if (!readyToStart) return;
+    // Validate only if a value was entered — odometer is optional
+    if (odometerStart && isNaN(Number(odometerStart))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!readyToStart) return;
-    Alert.alert('Start Trip', `Starting trip with odometer at ${odometerStart} km. Confirm?`, [
+    const odo = odometerStart.trim() !== '' && !isNaN(Number(odometerStart))
+      ? Number(odometerStart)
+      : undefined;
+    const msg = odo !== undefined
+      ? `Starting trip — odometer at ${odo} km. Confirm?`
+      : 'Starting trip (no odometer reading entered). Confirm?';
+    Alert.alert('Start Trip', msg, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Start',
-        onPress: () => startTrip.mutate({ assignmentId: readyToStart.id, odometer: Number(odometerStart) }),
+        onPress: () => startTrip.mutate({ assignmentId: readyToStart.id, odometer: odo }),
       },
     ]);
   };
 
   const handleComplete = () => {
-    if (!odometerEnd || isNaN(Number(odometerEnd))) {
-      Alert.alert('Required', 'Please enter the ending odometer reading.');
+    if (!activeTrip) return;
+    // Validate only if a value was entered — odometer is optional
+    if (odometerEnd && isNaN(Number(odometerEnd))) {
+      Alert.alert('Invalid', 'Odometer Reading must be a valid number.');
       return;
     }
-    if (!activeTrip) return;
+    const odo = odometerEnd.trim() !== '' && !isNaN(Number(odometerEnd))
+      ? Number(odometerEnd)
+      : undefined;
     Alert.alert('Complete Trip', 'Mark this trip as completed?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: Number(odometerEnd), note: remarks }) },
+      { text: 'Complete', onPress: () => completeTrip.mutate({ id: activeTrip.id, odometer: odo, note: remarks }) },
     ]);
   };
 
@@ -191,7 +210,9 @@ export default function ActiveTripScreen() {
 
   // ── Empty state ────────────────────────────────────────────────────────────
 
-  if (!readyToStart && !activeTrip && completedTrips.length === 0) {
+  // Steps 4-5: Show empty state when no active/current trip — do NOT factor in
+  // completed trips here; historical trips belong in History, not Track.
+  if (!readyToStart && !activeTrip) {
     return (
       <View style={[s.center, { paddingTop: insets.top }]}>
         <Text style={s.emptyIcon}>🚦</Text>
@@ -233,7 +254,7 @@ export default function ActiveTripScreen() {
 
           <View style={s.card}>
             <Text style={s.cardTitle}>▶ Start Trip</Text>
-            <Text style={s.inputLabel}>Odometer reading (km) *</Text>
+            <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
             <TextInput
               style={s.input}
               value={odometerStart}
@@ -273,7 +294,7 @@ export default function ActiveTripScreen() {
           {isStarted && (
             <View style={s.card}>
               <Text style={s.cardTitle}>✓ Complete Trip</Text>
-              <Text style={s.inputLabel}>Ending odometer (km) *</Text>
+              <Text style={s.inputLabel}>Odometer Reading (km) — optional</Text>
               <TextInput style={s.input} value={odometerEnd} onChangeText={setOdometerEnd} placeholder="e.g. 12680" keyboardType="numeric" placeholderTextColor={C.light} />
               <Text style={s.inputLabel}>Remarks (optional)</Text>
               <TextInput style={[s.input, s.multiline]} value={remarks} onChangeText={setRemarks} placeholder="Any notes about the trip..." multiline numberOfLines={3} placeholderTextColor={C.light} />
@@ -320,39 +341,7 @@ export default function ActiveTripScreen() {
         </>
       )}
 
-      {/* ── COMPLETED TRIPS — history ── */}
-      {completedTrips.length > 0 && (
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Completed Trips</Text>
-          {completedTrips.map(t => (
-            <View key={t.id} style={[s.card, s.completedCard]}>
-              <View style={s.cardRow}>
-                <Text style={s.cardTitle}>
-                  {t.assignment.booking.transportType.replace(/_/g, ' ')}
-                </Text>
-                <Badge label="Completed" color={C.success} />
-              </View>
-
-              {/* Requester */}
-              <RequesterRow requester={t.assignment.booking.requester} />
-
-              {/* Route */}
-              <InfoRow icon="📍" label="Pickup"  value={t.assignment.booking.pickupLabel  ?? t.assignment.booking.pickupCustomAddress  ?? '—'} />
-              <InfoRow icon="🏁" label="Dropoff" value={t.assignment.booking.dropoffLabel ?? t.assignment.booking.dropoffCustomAddress ?? '—'} />
-              <InfoRow icon="🚗" label="Vehicle" value={`${t.assignment.vehicle.vehicleNo} · ${t.assignment.vehicle.type}`} />
-              {t.odometerStart != null && t.odometerEnd != null && (
-                <InfoRow icon="📏" label="Distance" value={`${t.odometerEnd - t.odometerStart} km`} />
-              )}
-              {t.actualEndAt && (
-                <InfoRow icon="⏱" label="Completed" value={new Date(t.actualEndAt).toLocaleString()} />
-              )}
-              {t.remarks ? (
-                <InfoRow icon="💬" label="Remarks" value={t.remarks} />
-              ) : null}
-            </View>
-          ))}
-        </View>
-      )}
+      {/* Completed trips are shown in the History tab — not here (Steps 4-5) */}
     </ScrollView>
   );
 }

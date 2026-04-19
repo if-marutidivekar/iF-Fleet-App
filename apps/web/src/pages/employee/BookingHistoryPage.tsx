@@ -79,6 +79,7 @@ const CANCELLABLE = new Set(['PENDING_APPROVAL', 'APPROVED', 'ASSIGNED']);
 export function BookingHistoryPage() {
   const queryClient = useQueryClient();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const { data: bookings = [], isLoading } = useQuery<Booking[]>({
     queryKey: ['bookings'],
@@ -93,6 +94,12 @@ export function BookingHistoryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
       setCancellingId(null);
+      setCancelError(null);
+    },
+    // Step 3: Show backend error message (e.g. "cannot cancel after trip started")
+    onError: (e: any) => {
+      const msg = e?.response?.data?.message ?? 'Could not cancel booking. Please try again.';
+      setCancelError(msg);
     },
   });
 
@@ -100,164 +107,181 @@ export function BookingHistoryPage() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
+  // Steps 6-10: Internal scroll layout
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '32px 24px' }}>
-      <h1 style={{ margin: '0 0 24px', fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
-        Booking History
-      </h1>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8fafc' }}>
 
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid #e2e8f0',
-          borderRadius: 12,
-          overflow: 'auto',
-        }}
-      >
-        {isLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading...</div>
-        ) : sorted.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
-            No bookings found.
+      {/* Fixed page header */}
+      <div style={{ flexShrink: 0, padding: '24px 24px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
+          Booking History
+        </h1>
+        {/* Cancel error banner — Step 3 */}
+        {cancelError && (
+          <div style={{ marginTop: 10, padding: '8px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>⚠️ {cancelError}</span>
+            <button onClick={() => setCancelError(null)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
           </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                {[
-                  'Req #',
-                  'Transport',
-                  'Pickup → Dropoff',
-                  'Requested Time',
-                  'Status',
-                  'Assigned Vehicle / Driver',
-                  'Actions',
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '12px 16px',
-                      textAlign: 'left',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: '#64748b',
-                      borderBottom: '1px solid #e2e8f0',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((b, i) => {
-                const pickup = b.pickupLabel || b.pickupCustomAddress || '—';
-                const dropoff = b.dropoffLabel || b.dropoffCustomAddress || '—';
-                const isCancelling = cancellingId === b.id;
-                const canCancel = CANCELLABLE.has(b.status);
-                return (
-                  <tr
-                    key={b.id}
-                    style={{
-                      borderBottom: i < sorted.length - 1 ? '1px solid #f1f5f9' : undefined,
-                      background: '#fff',
-                    }}
-                  >
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>
-                      #{b.bookingNo}
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: 14, color: '#0f172a', fontWeight: 600 }}>
-                      {b.transportType}
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>
-                      <div>{pickup}</div>
-                      <div style={{ color: '#94a3b8', fontSize: 12 }}>→ {dropoff}</div>
-                    </td>
-                    <td
+        )}
+      </div>
+
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
+        <div
+          style={{
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 12,
+            overflow: 'auto',
+          }}
+        >
+          {isLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading...</div>
+          ) : sorted.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+              No bookings found.
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  {[
+                    'Req #',
+                    'Transport',
+                    'Pickup → Dropoff',
+                    'Requested Time',
+                    'Status',
+                    'Assigned Vehicle / Driver',
+                    'Actions',
+                  ].map((h) => (
+                    <th
+                      key={h}
                       style={{
-                        padding: '14px 16px',
-                        fontSize: 13,
-                        color: '#475569',
+                        padding: '12px 16px',
+                        textAlign: 'left',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#64748b',
+                        borderBottom: '1px solid #e2e8f0',
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {new Date(b.requestedAt).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <StatusBadge booking={b} />
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>
-                      {b.assignment ? (
-                        <div>
-                          <div style={{ fontWeight: 600, color: '#0f172a' }}>
-                            {b.assignment.vehicle.vehicleNo} —{' '}
-                            {b.assignment.vehicle.make} {b.assignment.vehicle.model}
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((b, i) => {
+                  const pickup = b.pickupLabel || b.pickupCustomAddress || '—';
+                  const dropoff = b.dropoffLabel || b.dropoffCustomAddress || '—';
+                  const isCancelling = cancellingId === b.id;
+                  const canCancel = CANCELLABLE.has(b.status);
+                  return (
+                    <tr
+                      key={b.id}
+                      style={{
+                        borderBottom: i < sorted.length - 1 ? '1px solid #f1f5f9' : undefined,
+                        background: '#fff',
+                      }}
+                    >
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>
+                        #{b.bookingNo}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, color: '#0f172a', fontWeight: 600 }}>
+                        {b.transportType}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>
+                        <div>{pickup}</div>
+                        <div style={{ color: '#94a3b8', fontSize: 12 }}>→ {dropoff}</div>
+                      </td>
+                      <td
+                        style={{
+                          padding: '14px 16px',
+                          fontSize: 13,
+                          color: '#475569',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {new Date(b.requestedAt).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <StatusBadge booking={b} />
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#475569' }}>
+                        {b.assignment ? (
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                              {b.assignment.vehicle.vehicleNo} —{' '}
+                              {b.assignment.vehicle.make} {b.assignment.vehicle.model}
+                            </div>
+                            <div style={{ color: '#64748b', fontSize: 12 }}>
+                              {b.assignment.driver.user.name}
+                            </div>
+                            {b.assignment.driver.user.mobileNumber && (
+                              <div style={{ color: '#2563eb', fontSize: 11 }}>📞 {b.assignment.driver.user.mobileNumber}</div>
+                            )}
                           </div>
-                          <div style={{ color: '#64748b', fontSize: 12 }}>
-                            {b.assignment.driver.user.name}
-                          </div>
-                          {b.assignment.driver.user.mobileNumber && (
-                            <div style={{ color: '#2563eb', fontSize: 11 }}>📞 {b.assignment.driver.user.mobileNumber}</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#cbd5e1', fontSize: 12 }}>Not assigned</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      {canCancel && (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <button
-                            onClick={() => {
-                              if (isCancelling) {
-                                cancelMutation.mutate(b.id);
-                              } else {
-                                setCancellingId(b.id);
-                              }
-                            }}
-                            disabled={cancelMutation.isPending && isCancelling}
-                            style={{
-                              background: isCancelling ? '#dc2626' : '#fff',
-                              color: isCancelling ? '#fff' : '#dc2626',
-                              border: '1px solid #dc2626',
-                              borderRadius: 6,
-                              padding: '5px 14px',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {isCancelling
-                              ? cancelMutation.isPending
-                                ? 'Cancelling...'
-                                : 'Confirm Cancel'
-                              : 'Cancel'}
-                          </button>
-                          {isCancelling && !cancelMutation.isPending && (
+                        ) : (
+                          <span style={{ color: '#cbd5e1', fontSize: 12 }}>Not assigned</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        {canCancel && (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <button
-                              onClick={() => setCancellingId(null)}
+                              onClick={() => {
+                                if (isCancelling) {
+                                  setCancelError(null);
+                                  cancelMutation.mutate(b.id);
+                                } else {
+                                  setCancellingId(b.id);
+                                  setCancelError(null);
+                                }
+                              }}
+                              disabled={cancelMutation.isPending && isCancelling}
                               style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#64748b',
+                                background: isCancelling ? '#dc2626' : '#fff',
+                                color: isCancelling ? '#fff' : '#dc2626',
+                                border: '1px solid #dc2626',
+                                borderRadius: 6,
+                                padding: '5px 14px',
                                 fontSize: 12,
+                                fontWeight: 600,
                                 cursor: 'pointer',
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              Keep
+                              {isCancelling
+                                ? cancelMutation.isPending
+                                  ? 'Cancelling...'
+                                  : 'Confirm Cancel'
+                                : 'Cancel'}
                             </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+                            {isCancelling && !cancelMutation.isPending && (
+                              <button
+                                onClick={() => { setCancellingId(null); setCancelError(null); }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#64748b',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Keep
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

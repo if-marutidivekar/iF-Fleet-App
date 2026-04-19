@@ -432,12 +432,15 @@ Global `ValidationPipe` with:
 /employee/             → EmployeeDashboard
 /employee/book         → NewBookingPage
 /employee/history      → BookingHistoryPage
-/employee/track/:id    → TripTrackingPage
+/employee/trip/:tripId → TripTrackingPage (active booking tracker)
+/employee/profile      → EmployeeProfilePage
 
-/driver/               → DriverDashboard
-/driver/fleet          → FleetPage
-/driver/trip/:id       → ActiveTripPage
-/driver/profile        → ProfilePage
+/driver/               → DriverDashboard (stat cards + current/next assignment preview)
+/driver/fleet          → DriverFleetPage (My Vehicle — vehicle info + location management)
+/driver/assignments    → ActiveTripPage (Trip Tracking — active and pending assignments only)
+/driver/trip/:tripId   → ActiveTripPage (Trip Tracking — direct deep-link to a specific trip)
+/driver/history        → DriverHistoryPage (completed, declined, and cancelled trips — read-only)
+/driver/profile        → DriverProfilePage
 
 /admin/                → AdminDashboard
 /admin/bookings        → BookingQueuePage

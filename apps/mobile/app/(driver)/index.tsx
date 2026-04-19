@@ -45,11 +45,14 @@ interface Assignment {
     pickupCustomAddress?: string;
     dropoffLabel?: string;
     dropoffCustomAddress?: string;
+    status: string;
     requester: Requester;
   };
   vehicle: { vehicleNo: string; type: string };
   trip?: { id: string; status: string } | null;
 }
+
+const TRIP_ACTIVE = ['STARTED', 'IN_PROGRESS'];
 
 export default function DriverHome() {
   const router = useRouter();
@@ -57,10 +60,8 @@ export default function DriverHome() {
   const qc = useQueryClient();
   const user = useAuthStore(s => s.user);
 
-  // Per-card inline decline state
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState('');
-  // Per-card cancel acceptance state
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
@@ -74,7 +75,7 @@ export default function DriverHome() {
     queryKey: ['my-driver-profile'],
     queryFn: () => api.get<MyDriverProfile>('/fleet/drivers/me').then(r => r.data),
     refetchInterval: 60_000,
-    retry: false, // don't spam on error (e.g. driver profile doesn't exist yet)
+    retry: false,
   });
 
   const acceptMutation = useMutation({
@@ -113,14 +114,50 @@ export default function DriverHome() {
     declineMutation.mutate({ id, reason: declineReason });
   };
 
-  const pending   = assignments.filter(a => a.decision === 'PENDING');
-  // Accepted: only those whose trip is not completed (or no trip yet)
-  const accepted  = assignments.filter(
-    a => a.decision === 'ACCEPTED' && a.trip?.status !== 'COMPLETED',
-  );
-  const completed = assignments.filter(
-    a => a.decision === 'ACCEPTED' && a.trip?.status === 'COMPLETED',
-  );
+  // ── Dashboard stat counts (Steps 1-3): require booking.status === 'ASSIGNED' ──
+  const counts = {
+    // Awaiting driver accept/decline — ASSIGNED booking + PENDING decision only
+    pending: assignments.filter(
+      a => a.booking.status === 'ASSIGNED' && a.decision === 'PENDING',
+    ).length,
+    // Driver accepted; booking ASSIGNED; trip NOT yet started
+    assigned: assignments.filter(
+      a =>
+        a.booking.status === 'ASSIGNED' &&
+        a.decision === 'ACCEPTED' &&
+        (!a.trip || !TRIP_ACTIVE.includes(a.trip.status)),
+    ).length,
+    // Trip actively running (STARTED or IN_PROGRESS)
+    inProgress: assignments.filter(
+      a =>
+        a.decision === 'ACCEPTED' &&
+        a.trip != null &&
+        TRIP_ACTIVE.includes(a.trip.status),
+    ).length,
+    // Trip completed OR driver declined (excluding requester-cancelled)
+    completedDeclined: assignments.filter(
+      a =>
+        a.booking.status === 'COMPLETED' ||
+        (a.decision === 'DECLINED' && a.booking.status !== 'CANCELLED'),
+    ).length,
+  };
+
+  // ── Current assignment (Steps 4-5): most relevant active item only ──────────
+  // Priority: IN_TRIP (3) > ACCEPTED pre-trip (2) > PENDING (1)
+  const score = (a: Assignment): number => {
+    if (a.trip && TRIP_ACTIVE.includes(a.trip.status)) return 3;
+    if (a.booking.status === 'ASSIGNED' && a.decision === 'ACCEPTED') return 2;
+    if (a.booking.status === 'ASSIGNED' && a.decision === 'PENDING') return 1;
+    return 0;
+  };
+
+  const current = assignments
+    .filter(a => score(a) > 0)
+    .sort((a, b) => score(b) - score(a))[0] ?? null;
+
+  const isInTrip  = current != null && current.trip != null && TRIP_ACTIVE.includes(current.trip.status);
+  const isAccepted = current != null && current.decision === 'ACCEPTED' && !isInTrip;
+  const isPending  = current != null && current.decision === 'PENDING';
 
   return (
     <ScrollView
@@ -140,7 +177,7 @@ export default function DriverHome() {
         <View style={s.rolePill}><Text style={s.roleText}>DRIVER</Text></View>
       </View>
 
-      {/* ── My Vehicle Banner ── */}
+      {/* My Vehicle Banner */}
       {myProfile && (
         <TouchableOpacity
           style={myProfile.assignedVehicle ? s.vehicleBanner : s.vehicleBannerWarn}
@@ -167,80 +204,56 @@ export default function DriverHome() {
         </TouchableOpacity>
       )}
 
+      {/* ── Dashboard Stat Cards (Steps 1-3) ── */}
+      <View style={s.statsSection}>
+        <View style={s.statsRow}>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.warning }]}>{counts.pending}</Text>
+            <Text style={s.statLabel}>Pending</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.primary }]}>{counts.assigned}</Text>
+            <Text style={s.statLabel}>Assigned</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.orange }]}>{counts.inProgress}</Text>
+            <Text style={s.statLabel}>In Progress</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={[s.statValue, { color: C.success }]}>{counts.completedDeclined}</Text>
+            <Text style={s.statLabel}>Done / Declined</Text>
+          </View>
+        </View>
+      </View>
+
       {isLoading && <ActivityIndicator color={C.primary} style={{ margin: 32 }} />}
 
-      {/* ── Pending assignments — action required ── */}
-      {pending.length > 0 && (
+      {/* ── Current Assignment (Steps 4-5): single active/actionable card only ── */}
+      {!isLoading && current != null && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>⚡ Action Required</Text>
-          {pending.map(a => {
-            const isDeclining = decliningId === a.id;
-            return (
-              <AssignmentCard key={a.id} assignment={a}>
-                {/* Decline reason input */}
-                {isDeclining && (
-                  <View style={s.declineBox}>
-                    <Text style={s.declineLabel}>Reason for declining *</Text>
-                    <TextInput
-                      style={s.declineInput}
-                      value={declineReason}
-                      onChangeText={setDeclineReason}
-                      placeholder="Reason for declining..."
-                      placeholderTextColor={C.light}
-                      autoFocus
-                    />
-                  </View>
-                )}
-                <View style={s.actionRow}>
-                  <TouchableOpacity
-                    style={[s.btn, s.acceptBtn]}
-                    onPress={() => acceptMutation.mutate(a.id)}
-                    disabled={acceptMutation.isPending}
-                  >
-                    <Text style={s.btnText}>✓ Accept</Text>
-                  </TouchableOpacity>
-                  {isDeclining ? (
-                    <>
-                      <TouchableOpacity
-                        style={[s.btn, s.declineConfirmBtn]}
-                        onPress={() => handleDeclineSubmit(a.id)}
-                        disabled={declineMutation.isPending}
-                      >
-                        <Text style={s.btnText}>{declineMutation.isPending ? '…' : 'Submit Decline'}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[s.btn, s.cancelBtn]}
-                        onPress={() => { setDecliningId(null); setDeclineReason(''); }}
-                      >
-                        <Text style={[s.btnText, { color: C.muted }]}>Cancel</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity
-                      style={[s.btn, s.declineBtn]}
-                      onPress={() => setDecliningId(a.id)}
-                    >
-                      <Text style={s.btnText}>✗ Decline</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </AssignmentCard>
-            );
-          })}
-        </View>
-      )}
+          <Text style={s.sectionTitle}>
+            {isInTrip ? '🚗 In Progress' : isPending ? '⚡ Action Required' : 'Current Assignment'}
+          </Text>
 
-      {/* ── Accepted assignments ── */}
-      {accepted.length > 0 && (
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Assignments</Text>
-          {accepted.map(a => {
-            const isCancelling = cancellingId === a.id;
-            const hasTripStarted = a.trip?.status === 'STARTED' || a.trip?.status === 'IN_PROGRESS';
-            return (
-              <AssignmentCard key={a.id} assignment={a}>
-                {/* Cancel acceptance input */}
-                {isCancelling && (
+          <AssignmentCard assignment={current}>
+            {/* Step 5: state-appropriate actions only */}
+
+            {/* IN_TRIP — only "Continue Trip" */}
+            {isInTrip && (
+              <View style={s.actionRow}>
+                <TouchableOpacity
+                  style={[s.btn, s.tripBtn]}
+                  onPress={() => router.push('/(driver)/track')}
+                >
+                  <Text style={s.btnText}>🚗 Continue Trip</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ACCEPTED pre-trip — Start Trip + optional Cancel acceptance */}
+            {isAccepted && (
+              <>
+                {cancellingId === current.id && (
                   <View style={[s.declineBox, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
                     <Text style={[s.declineLabel, { color: C.orange }]}>Cancel your acceptance?</Text>
                     <TextInput
@@ -257,17 +270,14 @@ export default function DriverHome() {
                     style={[s.btn, s.tripBtn]}
                     onPress={() => router.push('/(driver)/track')}
                   >
-                    <Text style={s.btnText}>
-                      {hasTripStarted ? '🚗 Continue Trip' : '▶ Start Trip'}
-                    </Text>
+                    <Text style={s.btnText}>▶ Start Trip</Text>
                   </TouchableOpacity>
-                  {/* Only allow cancel acceptance if trip hasn't started */}
-                  {!hasTripStarted && !a.trip && (
-                    isCancelling ? (
+                  {!current.trip && (
+                    cancellingId === current.id ? (
                       <>
                         <TouchableOpacity
                           style={[s.btn, { backgroundColor: C.orange, flex: 1.2 }]}
-                          onPress={() => cancelAcceptanceMutation.mutate({ id: a.id, reason: cancelReason })}
+                          onPress={() => cancelAcceptanceMutation.mutate({ id: current.id, reason: cancelReason })}
                           disabled={cancelAcceptanceMutation.isPending}
                         >
                           <Text style={s.btnText}>{cancelAcceptanceMutation.isPending ? '…' : 'Confirm'}</Text>
@@ -282,46 +292,73 @@ export default function DriverHome() {
                     ) : (
                       <TouchableOpacity
                         style={[s.btn, { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', flex: 0.9 }]}
-                        onPress={() => setCancellingId(a.id)}
+                        onPress={() => setCancellingId(current.id)}
                       >
                         <Text style={[s.btnText, { color: C.orange }]}>✕ Cancel</Text>
                       </TouchableOpacity>
                     )
                   )}
                 </View>
-              </AssignmentCard>
-            );
-          })}
-        </View>
-      )}
+              </>
+            )}
 
-      {/* ── Accepted Completed Trips ── */}
-      {completed.length > 0 && (
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Completed Trips</Text>
-          {completed.map(a => (
-            <View key={a.id} style={[s.card, s.completedCard]}>
-              <View style={s.cardTop}>
-                <View>
-                  <Text style={s.vehicle}>🚗 {a.vehicle.vehicleNo} · {a.vehicle.type}</Text>
-                  <Text style={s.bookingNoText}>Req #{a.booking.bookingNo}</Text>
+            {/* PENDING — Accept + Decline */}
+            {isPending && (
+              <>
+                {decliningId === current.id && (
+                  <View style={s.declineBox}>
+                    <Text style={s.declineLabel}>Reason for declining *</Text>
+                    <TextInput
+                      style={s.declineInput}
+                      value={declineReason}
+                      onChangeText={setDeclineReason}
+                      placeholder="Reason for declining..."
+                      placeholderTextColor={C.light}
+                      autoFocus
+                    />
+                  </View>
+                )}
+                <View style={s.actionRow}>
+                  <TouchableOpacity
+                    style={[s.btn, s.acceptBtn]}
+                    onPress={() => acceptMutation.mutate(current.id)}
+                    disabled={acceptMutation.isPending}
+                  >
+                    <Text style={s.btnText}>{acceptMutation.isPending ? '…' : '✓ Accept'}</Text>
+                  </TouchableOpacity>
+                  {decliningId === current.id ? (
+                    <>
+                      <TouchableOpacity
+                        style={[s.btn, s.declineConfirmBtn]}
+                        onPress={() => handleDeclineSubmit(current.id)}
+                        disabled={declineMutation.isPending}
+                      >
+                        <Text style={s.btnText}>{declineMutation.isPending ? '…' : 'Submit Decline'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.btn, s.cancelBtn]}
+                        onPress={() => { setDecliningId(null); setDeclineReason(''); }}
+                      >
+                        <Text style={[s.btnText, { color: C.muted }]}>Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity
+                      style={[s.btn, s.declineBtn]}
+                      onPress={() => setDecliningId(current.id)}
+                    >
+                      <Text style={s.btnText}>✗ Decline</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <Badge label="Completed" color={C.success} />
-              </View>
-              {/* Requester */}
-              <RequesterBox requester={a.booking.requester} />
-              {/* Route */}
-              <RouteRow
-                pickup={a.booking.pickupLabel ?? a.booking.pickupCustomAddress ?? '—'}
-                dropoff={a.booking.dropoffLabel ?? a.booking.dropoffCustomAddress ?? '—'}
-              />
-              <Text style={s.time}>📅 {new Date(a.booking.requestedAt).toLocaleString()}</Text>
-            </View>
-          ))}
+              </>
+            )}
+          </AssignmentCard>
         </View>
       )}
 
-      {!isLoading && pending.length === 0 && accepted.length === 0 && completed.length === 0 && (
+      {/* Empty state — no active assignment */}
+      {!isLoading && current == null && (
         <View style={s.empty}>
           <Text style={s.emptyIcon}>🛑</Text>
           <Text style={s.emptyTitle}>No active assignments</Text>
@@ -376,7 +413,6 @@ function AssignmentCard({ assignment: a, children }: { assignment: Assignment; c
         <Badge label={a.decision} color={color} />
       </View>
 
-      {/* Requester info */}
       <RequesterBox requester={a.booking.requester} />
 
       <RouteRow pickup={pickup} dropoff={dropoff} />
@@ -397,12 +433,12 @@ function AssignmentCard({ assignment: a, children }: { assignment: Assignment; c
 
 const s = StyleSheet.create({
   container:    { flex: 1, backgroundColor: C.bg },
-  header:       { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 0 },
+  header:       { backgroundColor: C.surface, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.border },
   headerBrand:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerLogo:   { width: 32, height: 32 },
   // Vehicle banner
-  vehicleBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primaryLight, borderBottomWidth: 1, borderBottomColor: C.primary + '33', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 },
-  vehicleBannerWarn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 },
+  vehicleBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.primaryLight, borderBottomWidth: 1, borderBottomColor: C.primary + '33', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 4 },
+  vehicleBannerWarn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a', paddingHorizontal: 16, paddingVertical: 10, marginBottom: 4 },
   bannerLabel:  { fontSize: 10, fontWeight: '700', color: C.primary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
   bannerValue:  { fontSize: 14, fontWeight: '700', color: C.text },
   bannerSub:    { fontSize: 12, color: C.muted, marginTop: 2 },
@@ -411,10 +447,16 @@ const s = StyleSheet.create({
   name:         { fontSize: 20, fontWeight: '800', color: C.text },
   rolePill:     { backgroundColor: C.successLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   roleText:     { color: C.success, fontWeight: '800', fontSize: 12 },
-  section:      { marginHorizontal: 16, marginBottom: 16 },
+  // Stat cards
+  statsSection: { marginHorizontal: 16, marginTop: 14, marginBottom: 4 },
+  statsRow:     { flexDirection: 'row', gap: 8 },
+  statCard:     { flex: 1, backgroundColor: C.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 6, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  statValue:    { fontSize: 22, fontWeight: '800', marginBottom: 3 },
+  statLabel:    { fontSize: 10, color: C.muted, fontWeight: '600', textAlign: 'center' },
+  // Section & cards
+  section:      { marginHorizontal: 16, marginTop: 16, marginBottom: 8 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
   card:         { backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
-  completedCard:{ borderWidth: 1, borderColor: C.successLight },
   cardTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   vehicle:      { fontSize: 13, fontWeight: '600', color: C.muted },
   bookingNoText:{ fontSize: 11, color: C.light, marginTop: 2 },

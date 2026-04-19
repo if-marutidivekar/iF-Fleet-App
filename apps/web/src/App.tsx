@@ -18,6 +18,7 @@ import { EmployeeProfilePage } from './pages/employee/ProfilePage';
 import { DriverDashboard } from './pages/driver/DriverDashboard';
 import { DriverFleetPage } from './pages/driver/FleetPage';
 import { ActiveTripPage } from './pages/driver/ActiveTripPage';
+import { DriverHistoryPage } from './pages/driver/HistoryPage';
 import { DriverProfilePage } from './pages/driver/ProfilePage';
 
 // Admin pages
@@ -78,6 +79,7 @@ export function App() {
         <Route path="/driver/fleet" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverFleetPage /></RequireAuth>} />
         <Route path="/driver/trip/:tripId" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
         <Route path="/driver/assignments" element={<RequireAuth roles={[UserRole.DRIVER]}><ActiveTripPage /></RequireAuth>} />
+        <Route path="/driver/history" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverHistoryPage /></RequireAuth>} />
         <Route path="/driver/profile" element={<RequireAuth roles={[UserRole.DRIVER]}><DriverProfilePage /></RequireAuth>} />
 
         {/* Admin */}

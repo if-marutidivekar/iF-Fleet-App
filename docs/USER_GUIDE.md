@@ -190,12 +190,26 @@ Drivers manage their fleet vehicle assignment, set their current location, accep
 
 | Tab | Purpose |
 |-----|---------|
-| **Home** | Active assignment cards and quick actions |
+| **Home** | Stat cards (Pending / Assigned / In Progress / Completed+Declined) and current assignment card |
 | **Fleet** | Your assigned vehicle and location management |
 | **Track** | Active trip controls (start, complete, fuel log) |
-| **History** | Completed and past trips |
+| **History** | Completed, declined, and cancelled trips |
 | **Alerts** | In-app notifications |
 | **Profile** | Your account and PIN management |
+
+### Web App — Navigation
+
+Drivers can also access a subset of functionality from the web browser.
+
+| Section | Purpose |
+|---------|---------|
+| **Dashboard** | Stat cards and Current / Next Assignment preview |
+| **My Vehicle** | Your fleet-assigned vehicle and location (same as Fleet tab on mobile) |
+| **Trip Tracking** | Active and pending assignments only — accept, decline, start, and complete trips |
+| **History** | Read-only view of completed, declined, and cancelled trips |
+| **Profile** | Account details |
+
+> **Trip Tracking (web)** shows only your currently actionable assignment — it does not list completed or historical trips. Finished trips automatically appear in **History**.
 
 ---
 
@@ -247,16 +261,20 @@ The vehicle returns to **Available** status and can be reassigned.
 
 ### Home Tab — Managing Assignments
 
-When a booking is assigned to you (or your vehicle via the preferred-vehicle flow), a card appears on your **Home** tab.
+The **Home** tab shows four summary stat cards at the top:
 
-Each assignment card shows:
-- Booking reference number
-- Requester name
-- Pickup and dropoff locations
-- Requested date and time
-- Transport type
+| Card | Meaning |
+|------|---------|
+| **Pending Assignments** | Bookings assigned to you awaiting your Accept/Decline decision |
+| **Assigned** | Accepted bookings where the trip has not yet started |
+| **In Progress** | Trips actively running right now |
+| **Completed / Declined** | Finished or declined assignments (lifetime count) |
+
+Below the stat cards, a **Current / Next Assignment** card shows the single most actionable item — prioritised as: active trip > accepted (pre-trip) > pending decision. Completed, declined, and cancelled assignments do not appear here.
 
 #### Accepting an Assignment
+
+When a booking is pending your decision, the card shows **Accept** and **Decline** buttons.
 
 Tap **Accept** on the assignment card. The booking moves to **Assigned** status and the employee is notified.
 
@@ -349,7 +367,7 @@ Admins have full visibility and control over the entire fleet — approvals, ass
 | Section | Purpose |
 |---------|---------|
 | **Dashboard** | KPI tiles, quick actions, recent activity |
-| **Booking Queue** | Pending approval requests |
+| **Bookings** | Pending approval requests and booking management |
 | **Fleet Map** | Live fleet status (vehicle, driver, location) |
 | **Fleet Master** | Vehicle and driver master data |
 | **Users** | User management |
@@ -494,7 +512,7 @@ The driver will be forced to change the PIN on their next login.
 
 #### Approval Queue
 
-The **Book** tab / **Booking Queue** page shows all bookings in **Pending Approval** status.
+The **Book** tab (mobile) / **Bookings** page (web) shows all bookings in **Pending Approval** status.
 
 Each row shows:
 - Booking number and requester name

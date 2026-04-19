@@ -27,6 +27,10 @@ interface Vehicle {
   status: string;
   currentDriverId?: string;
   currentDriverAssignedAt?: string;
+  // Steps 1 & 5: Vehicle's own location — single source of truth
+  currentLocationText?: string | null;
+  currentLocationPreset?: { id: string; name: string } | null;
+  locationUpdatedAt?: string | null;
   currentDriver?: {
     id: string;
     user: { id: string; name: string };
@@ -139,13 +143,21 @@ export default function AdminFleet() {
         {tab === 'vehicles' && (
           <>
             {loadingV && <ActivityIndicator color={C.primary} style={{ margin: 24 }} />}
-            {vehicles.map(v => (
+            {vehicles.map(v => {
+              // Steps 1 & 5: Read location from Vehicle's own fields only — never driver's profile
+              const vehicleLocation = v.currentLocationPreset?.name ?? v.currentLocationText ?? null;
+              return (
               <View key={v.id} style={s.card}>
                 <View style={s.cardRow}>
                   <Text style={s.vehicleNo}>{v.vehicleNo}</Text>
                   <Badge label={v.status} color={STATUS_COLOR[v.status] ?? C.muted} />
                 </View>
                 <Text style={s.vehicleType}>{v.type.replace(/_/g, ' ')}{v.make ? ` · ${v.make} ${v.model ?? ''}` : ''}</Text>
+                {/* Current Location — vehicle's own single source of truth */}
+                {vehicleLocation
+                  ? <Text style={[s.locationText, { marginBottom: 8 }]}>📍 {vehicleLocation}</Text>
+                  : <Text style={[s.noLocation, { marginBottom: 8 }]}>📍 Location not set</Text>
+                }
                 <View style={s.driverRow}>
                   {v.currentDriver ? (
                     <>
@@ -171,7 +183,8 @@ export default function AdminFleet() {
                   )}
                 </View>
               </View>
-            ))}
+              );
+            })}
           </>
         )}
 
