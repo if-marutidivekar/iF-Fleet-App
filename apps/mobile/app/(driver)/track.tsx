@@ -25,6 +25,7 @@ interface BookingInfo {
   dropoffLabel?: string;
   dropoffCustomAddress?: string;
   requestedAt: string;
+  status: string;
   requester: Requester;
 }
 
@@ -89,16 +90,18 @@ export default function ActiveTripScreen() {
     void refetchTrips();
   };
 
-  // Find accepted assignment that hasn't had a trip started yet
+  // Find accepted assignment that hasn't had a trip started yet.
+  // Steps 4-5: require booking.status === 'ASSIGNED' so completed/historical
+  // bookings never appear here as "ready to start".
   const readyToStart = assignments.find(
-    a => a.decision === 'ACCEPTED' && (!a.trip || a.trip.status === 'CREATED'),
+    a =>
+      a.booking.status === 'ASSIGNED' &&
+      a.decision === 'ACCEPTED' &&
+      (!a.trip || a.trip.status === 'CREATED'),
   );
 
   // Active trip: STARTED or IN_PROGRESS
   const activeTrip = trips.find(t => ['STARTED', 'IN_PROGRESS'].includes(t.status));
-
-  // Completed trips (for history at bottom)
-  const completedTrips = trips.filter(t => t.status === 'COMPLETED');
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -207,7 +210,9 @@ export default function ActiveTripScreen() {
 
   // ── Empty state ────────────────────────────────────────────────────────────
 
-  if (!readyToStart && !activeTrip && completedTrips.length === 0) {
+  // Steps 4-5: Show empty state when no active/current trip — do NOT factor in
+  // completed trips here; historical trips belong in History, not Track.
+  if (!readyToStart && !activeTrip) {
     return (
       <View style={[s.center, { paddingTop: insets.top }]}>
         <Text style={s.emptyIcon}>🚦</Text>
@@ -336,39 +341,7 @@ export default function ActiveTripScreen() {
         </>
       )}
 
-      {/* ── COMPLETED TRIPS — history ── */}
-      {completedTrips.length > 0 && (
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Accepted Completed Trips</Text>
-          {completedTrips.map(t => (
-            <View key={t.id} style={[s.card, s.completedCard]}>
-              <View style={s.cardRow}>
-                <Text style={s.cardTitle}>
-                  {t.assignment.booking.transportType.replace(/_/g, ' ')}
-                </Text>
-                <Badge label="Completed" color={C.success} />
-              </View>
-
-              {/* Requester */}
-              <RequesterRow requester={t.assignment.booking.requester} />
-
-              {/* Route */}
-              <InfoRow icon="📍" label="Pickup"  value={t.assignment.booking.pickupLabel  ?? t.assignment.booking.pickupCustomAddress  ?? '—'} />
-              <InfoRow icon="🏁" label="Dropoff" value={t.assignment.booking.dropoffLabel ?? t.assignment.booking.dropoffCustomAddress ?? '—'} />
-              <InfoRow icon="🚗" label="Vehicle" value={`${t.assignment.vehicle.vehicleNo} · ${t.assignment.vehicle.type}`} />
-              {t.odometerStart != null && t.odometerEnd != null && (
-                <InfoRow icon="📏" label="Distance" value={`${t.odometerEnd - t.odometerStart} km`} />
-              )}
-              {t.actualEndAt && (
-                <InfoRow icon="⏱" label="Completed" value={new Date(t.actualEndAt).toLocaleString()} />
-              )}
-              {t.remarks ? (
-                <InfoRow icon="💬" label="Remarks" value={t.remarks} />
-              ) : null}
-            </View>
-          ))}
-        </View>
-      )}
+      {/* Completed trips are shown in the History tab — not here (Steps 4-5) */}
     </ScrollView>
   );
 }

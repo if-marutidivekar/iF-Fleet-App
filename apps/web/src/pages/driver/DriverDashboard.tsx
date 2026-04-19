@@ -82,17 +82,17 @@ export function DriverDashboard() {
 
   // ── Dashboard counts aligned with booking/trip lifecycle ──────────────────
   const counts = {
-    // Assignments awaiting driver accept/decline (not cancelled by requester)
+    // Awaiting driver accept/decline — only ASSIGNED bookings (not yet accepted/declined)
     pending: assignments.filter(
-      (a) => a.decision === 'PENDING' && a.booking.status !== 'CANCELLED',
+      (a) => a.booking.status === 'ASSIGNED' && a.decision === 'PENDING',
     ).length,
 
-    // Steps 4-7: "Assigned" — driver accepted; trip has NOT started yet — ready to drive.
-    // Renamed from "Approved / Assigned". Count goes to 0 once trip completes.
+    // Driver accepted; booking is ASSIGNED; trip has NOT started yet — ready to drive.
+    // Count goes to 0 once trip starts (moves to In Progress) or completes.
     assigned: assignments.filter(
       (a) =>
+        a.booking.status === 'ASSIGNED' &&
         a.decision === 'ACCEPTED' &&
-        a.booking.status !== 'CANCELLED' &&
         (!a.trip || !TRIP_ACTIVE_STATUSES.includes(a.trip.status)),
     ).length,
 
@@ -100,7 +100,6 @@ export function DriverDashboard() {
     inProgress: assignments.filter(
       (a) =>
         a.decision === 'ACCEPTED' &&
-        a.booking.status !== 'CANCELLED' &&
         a.trip != null &&
         TRIP_ACTIVE_STATUSES.includes(a.trip.status),
     ).length,
@@ -113,21 +112,24 @@ export function DriverDashboard() {
     ).length,
   };
 
-  // Most relevant active assignment for the preview card:
-  // Priority — in-progress trip > pending action > accepted/waiting
+  // Current / Next Assignment: active items only (Steps 1-3, 6-7)
+  // Only ASSIGNED (pre-trip) and IN_TRIP booking states qualify.
+  // Excludes COMPLETED, DECLINED, CANCELLED — no historical items.
   const current = assignments
-    .filter(
-      (a) =>
-        (a.decision === 'PENDING' || a.decision === 'ACCEPTED') &&
-        a.booking.status !== 'CANCELLED',
+    .filter((a) =>
+      (a.booking.status === 'ASSIGNED' || a.booking.status === 'IN_TRIP') &&
+      (a.decision === 'PENDING' || a.decision === 'ACCEPTED'),
     )
     .sort((a, b) => {
-      // In-progress trips float to top
-      const aActive = a.trip && TRIP_ACTIVE_STATUSES.includes(a.trip.status) ? 1 : 0;
-      const bActive = b.trip && TRIP_ACTIVE_STATUSES.includes(b.trip.status) ? 1 : 0;
-      if (bActive !== aActive) return bActive - aActive;
-      return new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime();
-    })[0];
+      // Priority: IN_TRIP (3) > ACCEPTED pre-trip (2) > PENDING (1)
+      const score = (x: typeof a): number => {
+        if (x.trip && TRIP_ACTIVE_STATUSES.includes(x.trip.status)) return 3;
+        if (x.booking.status === 'ASSIGNED' && x.decision === 'ACCEPTED') return 2;
+        if (x.booking.status === 'ASSIGNED' && x.decision === 'PENDING') return 1;
+        return 0;
+      };
+      return score(b) - score(a);
+    })[0] ?? null;
 
   return (
     // Steps 6-10: Internal scroll layout
@@ -165,7 +167,7 @@ export function DriverDashboard() {
               cursor: 'pointer',
             }}
           >
-            Go to My Assignments
+            Go to Trip Tracking
           </button>
         </div>
       </div>

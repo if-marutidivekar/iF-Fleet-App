@@ -725,9 +725,20 @@ export function ActiveTripPage() {
     enabled: isAutoMode,
   });
 
-  const sorted = [...assignments].sort(
-    (a, b) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime(),
-  );
+  // My Trip: only current active/actionable assignments — Steps 4-5, 6-7
+  // Excludes COMPLETED, DECLINED, CANCELLED. Historical items belong in History only.
+  const myTrip = assignments
+    .filter((a) =>
+      (a.booking.status === 'ASSIGNED' || a.booking.status === 'IN_TRIP') &&
+      (a.decision === 'PENDING' || a.decision === 'ACCEPTED'),
+    )
+    .sort((a, b) => {
+      // Active trips (STARTED / IN_PROGRESS) float to top
+      const aActive = a.trip && (a.trip.status === 'STARTED' || a.trip.status === 'IN_PROGRESS') ? 1 : 0;
+      const bActive = b.trip && (b.trip.status === 'STARTED' || b.trip.status === 'IN_PROGRESS') ? 1 : 0;
+      if (bActive !== aActive) return bActive - aActive;
+      return new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime();
+    });
 
   return (
     // Steps 6-10: Internal scroll layout — header fixed, content area scrolls
@@ -736,7 +747,7 @@ export function ActiveTripPage() {
       {/* Fixed page header */}
       <div style={{ flexShrink: 0, padding: '24px 24px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
-          My Assignments
+          Trip Tracking
         </h1>
       </div>
 
@@ -764,7 +775,7 @@ export function ActiveTripPage() {
 
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</div>
-        ) : sorted.length === 0 ? (
+        ) : myTrip.length === 0 ? (
           <div
             style={{
               background: '#fff',
@@ -775,11 +786,11 @@ export function ActiveTripPage() {
               color: '#94a3b8',
             }}
           >
-            No assignments yet.
+            No active or pending assignments right now.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {sorted.map((a) => (
+            {myTrip.map((a) => (
               <AssignmentCard key={a.id} assignment={a} />
             ))}
           </div>

@@ -30,10 +30,11 @@ const EMPLOYEE_NAV: NavItem[] = [
 ];
 
 const DRIVER_NAV: NavItem[] = [
-  { label: 'Dashboard', path: '/driver', icon: '🏠' },
-  { label: 'My Vehicle', path: '/driver/fleet', icon: '🚗' },
-  { label: 'My Assignments', path: '/driver/assignments', icon: '📋' },
-  { label: 'Profile', path: '/driver/profile', icon: '👤' },
+  { label: 'Dashboard',     path: '/driver',             icon: '🏠' },
+  { label: 'My Vehicle',    path: '/driver/fleet',       icon: '🚗' },
+  { label: 'Trip Tracking', path: '/driver/assignments', icon: '📍' },
+  { label: 'History',       path: '/driver/history',     icon: '🕒' },
+  { label: 'Profile',       path: '/driver/profile',     icon: '👤' },
 ];
 
 function getRoleColor(role: UserRole): string {
