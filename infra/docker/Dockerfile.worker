@@ -1,0 +1,36 @@
+# ─── iF Fleet Worker — Dockerfile ─────────────────────────────────────────────
+#
+# The worker app runs background jobs: OTP record cleanup, push notification
+# delivery retries, and report generation.
+#
+# It shares the same monorepo build context as the API (same DB, Prisma schema,
+# and domain package). Build order mirrors Dockerfile.api.
+#
+# NOTE: apps/worker source is in progress. Until it has a build script and
+# entrypoint, this image is a no-op placeholder. Enable the worker service in
+# docker-compose.prod.yml with the 'worker' profile when ready:
+#   docker compose --profile worker up -d
+
+FROM node:20-alpine
+WORKDIR /app
+
+RUN apk add --no-cache python3 make g++ && \
+    corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/domain/package.json        ./packages/domain/
+COPY packages/api-contracts/package.json ./packages/api-contracts/
+COPY apps/api/package.json               ./apps/api/
+
+RUN pnpm install --frozen-lockfile
+
+COPY tsconfig.base.json       ./
+COPY packages/domain          ./packages/domain
+COPY packages/api-contracts   ./packages/api-contracts
+COPY apps/api                 ./apps/api
+
+RUN pnpm --filter @if-fleet/domain build
+RUN pnpm --filter @if-fleet/api exec prisma generate
+
+# Placeholder: replace with worker build + entrypoint when apps/worker is ready
+CMD ["sh", "-c", "echo 'Worker not yet implemented — exiting.' && exit 0"]

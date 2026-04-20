@@ -1,0 +1,186 @@
+# ─── iF Fleet — Production Docker Compose ─────────────────────────────────────
+#
+# Target: fleet.ideaforgetech.com (single-server deployment)
+#
+# Usage:
+#   # First deploy (get TLS cert then bring up everything):
+#   bash infra/scripts/deploy.sh --obtain-cert --seed
+#
+#   # Subsequent deploys (rebuild images + restart):
+#   bash infra/scripts/deploy.sh
+#
+#   # Build images only (no start):
+#   bash infra/scripts/deploy.sh --build-only
+#
+# Env file: infra/docker/.env.prod  (copy from .env.prod.template, never commit)
+#
+# CRITICAL: DATABASE_URL and REDIS_URL must use Docker service names ('postgres'
+# and 'redis'), NOT 'localhost'. localhost inside the api container refers to the
+# api container itself, not the database container.
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true   # unreachable from host or internet — only via nginx
+
+volumes:
+  postgres_data:
+  redis_data:
+  loki_data:
+  grafana_data:
+
+services:
+
+  # ── Reverse Proxy ────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro        # Let's Encrypt certs (host path)
+      - /var/www/certbot:/var/www/certbot:ro         # ACME challenge webroot
+    networks:
+      - edge
+    depends_on:
+      - web-app
+      - api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Web App (React SPA → nginx static) ───────────────────────────────────────
+  web-app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+    image: if-fleet-web:prod
+    restart: unless-stopped
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── API (NestJS) ──────────────────────────────────────────────────────────────
+  # Runs `prisma migrate deploy` automatically on startup before starting the server.
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    image: if-fleet-api:prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+    networks:
+      - edge
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fleet_db}
+      POSTGRES_USER: ${POSTGRES_USER:-fleet_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fleet_user} -d ${POSTGRES_DB:-fleet_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Worker (background jobs) ───────────────────────────────────────────────────
+  # Disabled by default until apps/worker is implemented.
+  # Enable with: docker compose --profile worker up -d
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    image: if-fleet-worker:prod
+    restart: on-failure
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - worker
+
+  # ── Loki (log aggregation) ─────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./monitoring/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+    networks:
+      - internal
+    profiles:
+      - monitoring
+
+  # ── Grafana (dashboards) ───────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: https://fleet.ideaforgetech.com/grafana/
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - internal
+      - edge
+    depends_on:
+      - loki
+    profiles:
+      - monitoring
