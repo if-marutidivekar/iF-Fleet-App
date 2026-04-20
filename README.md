@@ -157,6 +157,7 @@ pnpm dev
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Step-by-step guide for Admins, Drivers, and Employees |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, data models, API contract, security, real-time layer |
 | [docs/SETUP.md](docs/SETUP.md) | Local dev setup, staging Docker deployment, environment variables, CI/CD |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Production server deployment at `fleet.ideaforgetech.com` — Docker, TLS, lift-and-shift |
 
 ---
 
