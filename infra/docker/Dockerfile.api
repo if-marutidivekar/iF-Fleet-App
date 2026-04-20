@@ -1,56 +1,64 @@
-# ─── Build stage ─────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+# ─── iF Fleet API — Dockerfile ────────────────────────────────────────────────
+#
+# Single-stage build (no builder/runner split).
+#
+# Why single-stage:
+#   pnpm uses a virtual store (.pnpm/) with relative symlinks. Docker COPY does
+#   not faithfully preserve symlink targets across stages, so a two-stage build
+#   where the runner copies node_modules from the builder produces broken links.
+#   A single stage avoids this entirely.
+#
+# Build order matters:
+#   1. pnpm install  — installs everything including prisma CLI (devDep)
+#   2. domain build  — produces dist/cjs and dist/esm consumed by apps/api/tsconfig
+#   3. prisma generate — generates @prisma/client types BEFORE tsc runs
+#   4. nest build    — TypeScript compilation (needs generated Prisma types)
+#
+# At runtime:
+#   prisma migrate deploy runs before node starts; this is idempotent and safe
+#   on every container restart (already-applied migrations are skipped).
+
+FROM node:20-alpine
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+# Build tools: python3/make/g++ needed to compile bcrypt native addon on musl libc
+RUN apk add --no-cache python3 make g++ curl && \
+    corepack enable && corepack prepare pnpm@9.0.0 --activate
 
-# Copy workspace manifests first (Docker cache layer)
+# ── Dependency layer (cached until any package.json / lockfile changes) ────────
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY packages/domain/package.json ./packages/domain/
+COPY packages/domain/package.json        ./packages/domain/
 COPY packages/api-contracts/package.json ./packages/api-contracts/
-COPY apps/api/package.json ./apps/api/
+COPY apps/api/package.json               ./apps/api/
 
 RUN pnpm install --frozen-lockfile
 
-# Copy source
-COPY tsconfig.base.json ./
-COPY packages/domain ./packages/domain
-COPY packages/api-contracts ./packages/api-contracts
-COPY apps/api ./apps/api
+# ── Source layer ───────────────────────────────────────────────────────────────
+COPY tsconfig.base.json       ./
+COPY packages/domain          ./packages/domain
+COPY packages/api-contracts   ./packages/api-contracts
+COPY apps/api                 ./apps/api
 
-# Build shared packages then api
+# ── Build sequence ─────────────────────────────────────────────────────────────
+# Step 1: domain (produces dist/cjs + dist/esm referenced by apps/api/tsconfig.json)
 RUN pnpm --filter @if-fleet/domain build
-RUN pnpm --filter @if-fleet/api build
 
-# Generate Prisma client
+# Step 2: Prisma client generation — MUST precede TypeScript compilation
+#         @prisma/client types are generated here; without them tsc cannot resolve
+#         PrismaClient, Prisma.UserWhereInput, etc.
 RUN pnpm --filter @if-fleet/api exec prisma generate
 
-# ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
-WORKDIR /app
+# Step 3: NestJS compile (uses nest-cli.json + apps/api/tsconfig.json)
+RUN pnpm --filter @if-fleet/api build
 
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
-
-# Production deps only
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY packages/domain/package.json ./packages/domain/
-COPY packages/api-contracts/package.json ./packages/api-contracts/
-COPY apps/api/package.json ./apps/api/
-
-RUN pnpm install --frozen-lockfile --prod
-
-# Copy built artifacts
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/node_modules/.prisma ./apps/api/node_modules/.prisma
-COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
-COPY --from=builder /app/packages/domain/dist ./packages/domain/dist
-
+# ── Runtime ────────────────────────────────────────────────────────────────────
 WORKDIR /app/apps/api
 
 EXPOSE 3001
 
-HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=5 \
+HEALTHCHECK --interval=20s --timeout=5s --start-period=60s --retries=5 \
   CMD curl -f http://localhost:3001/api/v1/health || exit 1
 
-CMD ["node", "dist/main"]
+# prisma migrate deploy: idempotent, skips already-applied migrations.
+# exec hands control to node (proper signal handling for graceful shutdown).
+CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main"]

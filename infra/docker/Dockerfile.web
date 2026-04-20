@@ -1,4 +1,13 @@
-# ─── Build stage ─────────────────────────────────────────────────────────────
+# ─── iF Fleet Web — Dockerfile ────────────────────────────────────────────────
+#
+# Two-stage build: Vite compiles the React SPA in the builder, nginx serves the
+# static output in the runner (no Node.js at runtime).
+#
+# API base URL: the web app uses a relative baseURL ('/api/v1') so no VITE_*
+# environment variables are needed — nginx proxies /api/ to the API container
+# at the same domain, making all requests same-origin.
+
+# ─── Build stage ──────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
 
@@ -6,25 +15,27 @@ RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/domain/package.json ./packages/domain/
-COPY apps/web/package.json ./apps/web/
+COPY apps/web/package.json        ./apps/web/
 
 RUN pnpm install --frozen-lockfile
 
-COPY tsconfig.base.json ./
-COPY packages/domain ./packages/domain
-COPY apps/web ./apps/web
+COPY tsconfig.base.json  ./
+COPY packages/domain     ./packages/domain
+COPY apps/web            ./apps/web
 
-# Build domain then web
+# Build domain (produces dist/esm used by web's tsconfig paths)
 RUN pnpm --filter @if-fleet/domain build
+
+# Vite production build — outputs to apps/web/dist/
 RUN pnpm --filter @if-fleet/web build
 
-# ─── Runtime stage (serve static with nginx) ─────────────────────────────────
+# ─── Runtime stage (nginx static) ─────────────────────────────────────────────
 FROM nginx:1.27-alpine AS runner
 
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
-# SPA routing — all paths → index.html
-RUN printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' \
+# SPA routing: all unknown paths → index.html (React Router handles them)
+RUN printf 'server {\n  listen 3000;\n  root /usr/share/nginx/html;\n  index index.html;\n  gzip on;\n  gzip_types text/css application/javascript application/json;\n  location / { try_files $uri $uri/ /index.html; }\n  location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff2)$ { expires 1y; add_header Cache-Control "public, immutable"; }\n}\n' \
   > /etc/nginx/conf.d/default.conf
 
 EXPOSE 3000
